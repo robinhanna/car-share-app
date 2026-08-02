@@ -1,0 +1,99 @@
+/*
+ * Palette and type taken from soulandsurf.com (computed styles + theme CSS).
+ * Cako, Aktiv Grotesk Corp and American Typewriter are licensed fonts we can't
+ * ship, so Fraunces, Inter and Space Mono stand in for them.
+ */
+
+/* Latin subsets only — every extra subset is weight on a phone with one bar. */
+@import '@fontsource/fraunces/latin-600.css';
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/inter/latin-700.css';
+@import '@fontsource/space-mono/latin-400.css';
+
+:root {
+  --paper: #f4f1ed;
+  --surface: #f0ece9;
+  --sand: #e6e0d3;
+  --ink: #212529;
+  --ink-soft: #6b6560;
+  --coral: #f48467;
+  --coral-dark: #b34a2f;
+  --teal: #4fbfa8;
+  --teal-dark: #2a7365;
+  --rust: #c02b0a;
+  --white: #ffffff;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-label: 'Space Mono', ui-monospace, monospace;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --gap: 16px;
+  --tap: 52px; /* minimum touch target — thumbs, sunscreen, sand */
+
+  --shadow: 0 1px 2px rgba(33, 37, 41, 0.06), 0 8px 24px rgba(33, 37, 41, 0.06);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 22px;
+}
+
+/*
+ * The uppercase mono eyebrow is the single most recognisable Soul & Surf
+ * detail. Coral-dark, not coral: coral on paper is ~2.5:1 and unreadable.
+ */
+.eyebrow {
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--coral-dark);
+  margin: 0 0 6px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
