@@ -107,28 +107,104 @@ function setupTripLog_(ss) {
     .build();
   sheet.getRange(FIRST_DATA_ROW, TRIP.tripType, rows, 1).setDataValidation(tripType);
 
-  // Distance now prefers the odometer, then a Surf Spots lookup honouring the
-  // one-way / round-trip toggle (column C is one-way, doubled here), then the
-  // manually typed km. The original formula always used the round-trip column.
-  var formulas = [];
-  for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
-    formulas.push([
-      '=IF(AND($R' + r + '="",$S' + r + '=""),' +
-        'IF($C' + r + '="","",' +
-          "IFERROR(INDEX('Surf Spots'!$C$3:$C$55,MATCH($C" + r + ",'Surf Spots'!$B$3:$B$55,0))" +
-          '*IF($O' + r + '="One-way",1,2),' +
-          'IF($D' + r + '="","",$D' + r + '))),' +
-        '$S' + r + '-$R' + r + ')',
-    ]);
-  }
-  sheet.getRange(FIRST_DATA_ROW, TRIP.distance, formulas.length, 1).setFormulas(formulas);
-
-  // Default existing rows that have a destination but no type yet.
+  // Default the trip type first, so the distance formula has something to read
+  // when it recalculates.
   for (var i = FIRST_DATA_ROW; i <= lastRow; i++) {
     var typeCell = sheet.getRange(i, TRIP.tripType);
     var hasDest = String(sheet.getRange(i, TRIP.destination).getValue()).trim() !== '';
     if (hasDest && String(typeCell.getValue()).trim() === '') typeCell.setValue('Round trip');
   }
+
+  applyDistanceFormulas_(sheet, lastRow);
+}
+
+/**
+ * Writes the Distance formula, then checks it actually produced a number.
+ *
+ * On a spreadsheet whose locale uses the comma as a decimal separator (German,
+ * Portuguese…), a formula written with comma argument separators can fail to
+ * parse. setFormulas() is documented as US-style, but it does not always behave
+ * that way, so rather than trust it we verify against a row we know the answer
+ * for and fall back to the localised semicolon form.
+ */
+function applyDistanceFormulas_(sheet, lastRow) {
+  var probe = findProbeRow_(sheet, lastRow);
+
+  if (writeDistanceFormulas_(sheet, lastRow, ',') && probeLooksRight_(sheet, probe)) {
+    Logger.log('Distance formulas applied (comma separators).');
+    return;
+  }
+
+  Logger.log('Comma separators did not evaluate — retrying with semicolons.');
+  writeDistanceFormulas_(sheet, lastRow, ';');
+  if (probeLooksRight_(sheet, probe)) {
+    Logger.log('Distance formulas applied (semicolon separators).');
+    return;
+  }
+
+  Logger.log(
+    'WARNING: Distance still not calculating. Row ' + probe + ' shows "' +
+      sheet.getRange(probe, TRIP.distance).getValue() + '" — send this line to Claude.',
+  );
+}
+
+function writeDistanceFormulas_(sheet, lastRow, sep) {
+  var formulas = [];
+  for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    formulas.push([
+      '=IF(AND($R' + r + '=""' + sep + '$S' + r + '="")' + sep +
+        'IF($C' + r + '=""' + sep + '""' + sep +
+          "IFERROR(INDEX('Surf Spots'!$C$3:$C$55" + sep + "MATCH($C" + r +
+            sep + "'Surf Spots'!$B$3:$B$55" + sep + '0))' +
+          '*IF($O' + r + '="One-way"' + sep + '1' + sep + '2)' + sep +
+          'IF($D' + r + '=""' + sep + '""' + sep + '$D' + r + ')))' + sep +
+        '$S' + r + '-$R' + r + ')',
+    ]);
+  }
+  try {
+    sheet.getRange(FIRST_DATA_ROW, TRIP.distance, formulas.length, 1).setFormulas(formulas);
+    SpreadsheetApp.flush();
+    return true;
+  } catch (err) {
+    Logger.log('setFormulas failed with "' + sep + '": ' + err);
+    return false;
+  }
+}
+
+/** First row with a destination that matches a known spot — its distance must be > 0. */
+function findProbeRow_(sheet, lastRow) {
+  for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    if (String(sheet.getRange(r, TRIP.destination).getValue()).trim() !== '') return r;
+  }
+  return 0;
+}
+
+function probeLooksRight_(sheet, probe) {
+  if (!probe) return true; // nothing to check against — no logged trips yet
+  var v = sheet.getRange(probe, TRIP.distance).getValue();
+  return typeof v === 'number' && v > 0;
+}
+
+/**
+ * Prints what the Trip Log is actually doing. Run this if distances read zero.
+ */
+function diagnoseTripLog() {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.trips);
+  var spots = SpreadsheetApp.getActive().getSheetByName(SHEETS.spots);
+  var row = findProbeRow_(sheet, Math.max(sheet.getLastRow(), 24));
+
+  Logger.log('Spreadsheet locale: ' + SpreadsheetApp.getActive().getSpreadsheetLocale());
+  Logger.log('Probe row: ' + row);
+  Logger.log('C (destination): "' + sheet.getRange(row, TRIP.destination).getValue() + '"');
+  Logger.log('O (trip type):   "' + sheet.getRange(row, TRIP.tripType).getValue() + '"');
+  Logger.log('E formula:       ' + sheet.getRange(row, TRIP.distance).getFormula());
+  Logger.log('E value:         "' + sheet.getRange(row, TRIP.distance).getValue() + '"');
+  Logger.log('F value:         "' + sheet.getRange(row, TRIP.fuel).getValue() + '"');
+  Logger.log('Surf Spots B3:   "' + spots.getRange('B3').getValue() + '"');
+  Logger.log('Surf Spots C3:   "' + spots.getRange('C3').getValue() + '"');
+  Logger.log('Sheet names:     ' + SpreadsheetApp.getActive().getSheets().map(function (s) {
+    return s.getName();
+  }).join(' | '));
 }
 
 function ensureToken_() {
