@@ -2,7 +2,8 @@
 
 Deutsche Oberfläche. Englische Begriffe stehen in Klammern, weil die Doku sie verwendet.
 
-Sheet-ID: `1EdUwza3_l2N3qQ6wk7frw-oTk2sBvuqkNalS6gc5iKs`
+Das Sheet heißt "Car Share — August 2026" und liegt in Robins Drive. Die Sheet-ID steht
+absichtlich nicht hier — dieses Repo ist öffentlich.
 
 Schritte mit **→ an Claude** liefern etwas, das für den nächsten Schritt gebraucht wird.
 
