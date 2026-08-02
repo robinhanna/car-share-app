@@ -85,6 +85,7 @@ function applyOp_(op) {
     case 'createReservation': return createReservation_(op.clientId, op.payload || {});
     case 'cancelReservation': return cancelReservation_(op.payload || {});
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
+    case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
   }
 }
@@ -328,6 +329,86 @@ function logKarma_(clientId, p) {
     clientId,
   ]]);
   return { row: row };
+}
+
+// ---------------------------------------------------------------- reset
+
+/**
+ * Testing only: empties Trip Log, Karma Log and Reservations.
+ *
+ * Settings, Members, Surf Spots and Karma Actions are never touched — those are
+ * configuration, not logged data. Trip Log's calculated columns (E, F, I, K)
+ * keep their formulas; only the input columns are cleared, so the sheet stays
+ * ready for the next trip.
+ *
+ * Everything is copied to a timestamped backup tab first. The token that
+ * authorises this call is readable in the published bundle, so an unrecoverable
+ * wipe would be a bad thing to expose — a recoverable one is merely annoying.
+ */
+function resetTestData_(p) {
+  if (p.confirm !== 'RESET') throw new Error('Reset requires confirm:"RESET"');
+
+  var ss = SpreadsheetApp.getActive();
+  var backupName = backupLogs_(ss);
+
+  var trips = ss.getSheetByName(SHEETS.trips);
+  var cleared = { trips: 0, karma: 0, reservations: 0 };
+
+  var lastTrip = trips.getLastRow();
+  if (lastTrip >= FIRST_DATA_ROW) {
+    var rows = lastTrip - FIRST_DATA_ROW + 1;
+    [TRIP.date, TRIP.driver, TRIP.destination, TRIP.manualKm, TRIP.tolls, TRIP.parking,
+     TRIP.people, TRIP.notes, TRIP.id, TRIP.riders, TRIP.tripType, TRIP.reservationId,
+     TRIP.clientId, TRIP.odoStart, TRIP.odoEnd].forEach(function (col) {
+      trips.getRange(FIRST_DATA_ROW, col, rows, 1).clearContent();
+    });
+    cleared.trips = rows;
+  }
+
+  cleared.karma = clearRows_(ss.getSheetByName(SHEETS.karma), 5);
+  cleared.reservations = clearRows_(ss.getSheetByName(SHEETS.reservations), 11);
+
+  SpreadsheetApp.flush();
+  return { cleared: cleared, backup: backupName };
+}
+
+function clearRows_(sheet, width) {
+  if (!sheet) return 0;
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return 0;
+  var rows = last - FIRST_DATA_ROW + 1;
+  sheet.getRange(FIRST_DATA_ROW, 1, rows, width).clearContent();
+  return rows;
+}
+
+/** Snapshots the three log tabs, keeping the five most recent backups. */
+function backupLogs_(ss) {
+  var stamp = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd HH-mm-ss');
+  var name = 'Backup ' + stamp;
+  var backup = ss.insertSheet(name);
+  var row = 1;
+
+  [SHEETS.trips, SHEETS.karma, SHEETS.reservations].forEach(function (tabName) {
+    var sheet = ss.getSheetByName(tabName);
+    if (!sheet || sheet.getLastRow() < 1) return;
+    backup.getRange(row, 1).setValue(tabName).setFontWeight('bold');
+    row++;
+    var values = sheet.getDataRange().getValues();
+    backup.getRange(row, 1, values.length, values[0].length).setValues(values);
+    row += values.length + 2;
+  });
+
+  backup.hideSheet();
+  pruneBackups_(ss, 5);
+  return name;
+}
+
+function pruneBackups_(ss, keep) {
+  var backups = ss.getSheets().filter(function (s) {
+    return s.getName().indexOf('Backup ') === 0;
+  });
+  backups.sort(function (a, b) { return a.getName() < b.getName() ? -1 : 1; });
+  while (backups.length > keep) ss.deleteSheet(backups.shift());
 }
 
 // ---------------------------------------------------------------- helpers

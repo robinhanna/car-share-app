@@ -1,5 +1,7 @@
+import { useState } from 'preact/hooks';
+import { ADMIN_MEMBER, RESET_ENABLED } from '../config';
 import { euro } from '../lib/cost';
-import { useApp } from '../state/store';
+import { resetAllData, useApp } from '../state/store';
 
 interface Props {
   me: string;
@@ -67,6 +69,85 @@ export function Balance({ me }: Props) {
           </p>
         </>
       )}
+
+      {RESET_ENABLED && me === ADMIN_MEMBER && <ResetPanel />}
+    </>
+  );
+}
+
+/** Testing only — see RESET_ENABLED in src/config.ts. */
+function ResetPanel() {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { backup } = await resetAllData();
+      setResult(`Cleared. Backed up to the hidden tab "${backup}".`);
+      setOpen(false);
+      setTyped('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div class="spacer" />
+      <div class="card">
+        <p class="eyebrow">Testing</p>
+        {result && <div class="banner banner--synced">{result}</div>}
+        {error && <div class="banner banner--error">{error}</div>}
+
+        {!open ? (
+          <>
+            <p class="muted">
+              Empties Trip Log, Karma Log and Reservations. Members, Settings, Surf Spots and
+              Karma Actions are left alone, and a backup tab is written first.
+            </p>
+            <button class="btn btn--danger" onClick={() => setOpen(true)}>
+              Clear all logged data
+            </button>
+          </>
+        ) : (
+          <>
+            <label class="field">
+              <span>Type RESET to confirm</span>
+              <input
+                type="text"
+                autocapitalize="characters"
+                value={typed}
+                onInput={(e) => setTyped((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <div class="row">
+              <button
+                class="btn btn--secondary"
+                onClick={() => {
+                  setOpen(false);
+                  setTyped('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn--danger"
+                disabled={typed.trim().toUpperCase() !== 'RESET' || busy}
+                onClick={() => void run()}
+              >
+                {busy ? 'Clearing…' : 'Clear'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </>
   );
 }

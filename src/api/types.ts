@@ -78,7 +78,12 @@ export interface Bootstrap {
   recentTrips: Trip[];
 }
 
-export type OpName = 'completeTrip' | 'createReservation' | 'cancelReservation' | 'logKarma';
+export type OpName =
+  | 'completeTrip'
+  | 'createReservation'
+  | 'cancelReservation'
+  | 'logKarma'
+  | 'resetTestData';
 
 export interface CompleteTripPayload {
   date: string;
@@ -116,11 +121,17 @@ export interface LogKarmaPayload {
   points: number;
 }
 
+/** Testing only. The literal guards against a stray call doing damage. */
+export interface ResetPayload {
+  confirm: 'RESET';
+}
+
 export type OpPayload =
   | CompleteTripPayload
   | CreateReservationPayload
   | CancelReservationPayload
-  | LogKarmaPayload;
+  | LogKarmaPayload
+  | ResetPayload;
 
 export interface Op {
   clientId: string;

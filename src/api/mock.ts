@@ -105,7 +105,14 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
   });
   return {
     ok: true,
-    results: ops.map((op) => ({ clientId: op.clientId, ok: true })),
+    results: ops.map((op) => ({
+      clientId: op.clientId,
+      ok: true,
+      data:
+        op.op === 'resetTestData'
+          ? { cleared: { trips: 0, karma: 0, reservations: 0 }, backup: 'mock backup' }
+          : undefined,
+    })),
     data: structuredClone(bootstrap),
   };
 }

@@ -1,4 +1,4 @@
-import { get, set, update } from 'idb-keyval';
+import { del, get, set, update } from 'idb-keyval';
 import type { Bootstrap, Op } from '../api/types';
 
 const OUTBOX_KEY = 'outbox';
@@ -51,4 +51,9 @@ export async function cacheBootstrap(data: Bootstrap): Promise<void> {
 
 export async function readCachedBootstrap(): Promise<Bootstrap | null> {
   return (await get<Bootstrap>(BOOTSTRAP_KEY)) ?? null;
+}
+
+/** Drops this device's queue and cached copy — used by the testing reset. */
+export async function clearLocal(): Promise<void> {
+  await Promise.all([del(OUTBOX_KEY), del(BOOTSTRAP_KEY)]);
 }
