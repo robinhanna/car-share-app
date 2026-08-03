@@ -1,5 +1,5 @@
 /**
- * Car Share API — Quinta Agave, August 2026.
+ * Car Share API — Soul & Surf, Almádena, August 2026.
  *
  * Bound to the "Car Share — August 2026" spreadsheet. Deployed as a Web App
  * (Execute as: Me / Who has access: Anyone) so the PWA can read and write
@@ -11,19 +11,22 @@
 var SHEETS = {
   settings: 'Settings',
   spots: 'Surf Spots',
+  places: 'Places',
   members: 'Members',
   trips: 'Trip Log',
   karma: 'Karma Log',
   reservations: 'Reservations',
   karmaActions: 'Karma Actions',
+  payments: 'Payments',
+  rideDays: 'Ride Days',
 };
 
-// Trip Log columns (1-indexed), A-L are the original spreadsheet, M-S are new.
+// Trip Log columns (1-indexed), A-L are the original spreadsheet, M-T are new.
 var TRIP = {
   date: 1, driver: 2, destination: 3, manualKm: 4, distance: 5, fuel: 6,
   tolls: 7, parking: 8, total: 9, people: 10, perPerson: 11, notes: 12,
   id: 13, riders: 14, tripType: 15, reservationId: 16, clientId: 17,
-  odoStart: 18, odoEnd: 19,
+  odoStart: 18, odoEnd: 19, activity: 20,
 };
 
 var RES = {
@@ -33,7 +36,22 @@ var RES = {
 
 var KARMA = { date: 1, name: 2, action: 3, points: 4, clientId: 5 };
 
+var MEMBER = {
+  name: 1, include: 2, join: 3, leave: 4, days: 5, share: 6, paid: 7,
+  balance: 8, karma: 9, role: 10, rideDays: 11, tripCosts: 12,
+};
+
+var PAY = { date: 1, name: 2, type: 3, amount: 4, note: 5, clientId: 6 };
+
+var RIDE = { name: 1, role: 2, days: 3, carCharge: 4, tripCosts: 5 };
+
+var PLACE = { category: 1, name: 2, km: 3, notes: 4 };
+
 var FIRST_DATA_ROW = 3;
+var MEMBER_ROWS = 10;
+
+/** Who fronted the rental. Used to seed the prepayment row. */
+var ADMIN_NAME = 'Robin';
 
 // ---------------------------------------------------------------- endpoints
 
@@ -85,6 +103,7 @@ function applyOp_(op) {
     case 'createReservation': return createReservation_(op.clientId, op.payload || {});
     case 'cancelReservation': return cancelReservation_(op.payload || {});
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
+    case 'logPayment': return logPayment_(op.clientId, op.payload || {});
     case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
   }
@@ -99,9 +118,12 @@ function bootstrap_() {
     settings: readSettings_(ss),
     members: readMembers_(ss),
     spots: readSpots_(ss),
+    places: readPlaces_(ss),
     karmaActions: readKarmaActions_(ss),
+    karmaLog: readKarmaLog_(ss),
+    payments: readPayments_(ss),
     reservations: readReservations_(ss),
-    recentTrips: readRecentTrips_(ss, 30),
+    recentTrips: readTrips_(ss),
   };
 }
 
@@ -116,25 +138,140 @@ function readSettings_(ss) {
     fuelPrice: num_(s.getRange('B9').getValue()),
     consumption: num_(s.getRange('B10').getValue()),
     costPerKm: num_(s.getRange('B11').getValue()),
+    riderDays: num_(s.getRange('B12').getValue()),
+    dayRate: num_(s.getRange('B13').getValue()),
   };
 }
 
-function readMembers_(ss) {
+/** Members tab only, without the Ride Days merge — used by rebuildRideDays_. */
+function rawMembers_(ss) {
   var s = ss.getSheetByName(SHEETS.members);
-  var rows = s.getRange(FIRST_DATA_ROW, 1, 10, 9).getValues();
+  var rows = s.getRange(FIRST_DATA_ROW, 1, MEMBER_ROWS, MEMBER.tripCosts).getValues();
   return rows
-    .filter(function (r) { return String(r[0]).trim() !== ''; })
+    .filter(function (r) { return String(r[MEMBER.name - 1]).trim() !== ''; })
     .map(function (r) {
       return {
-        name: String(r[0]).trim(),
-        included: String(r[1]).trim().toLowerCase() === 'yes',
-        joinDate: iso_(r[2]),
-        leaveDate: iso_(r[3]),
-        daysActive: num_(r[4]),
-        share: num_(r[5]),
-        paid: num_(r[6]),
-        balance: num_(r[7]),
-        karma: num_(r[8]),
+        name: String(r[MEMBER.name - 1]).trim(),
+        included: String(r[MEMBER.include - 1]).trim().toLowerCase() === 'yes',
+        joinDate: iso_(r[MEMBER.join - 1]),
+        leaveDate: iso_(r[MEMBER.leave - 1]),
+        daysActive: num_(r[MEMBER.days - 1]),
+        carCharge: num_(r[MEMBER.share - 1]),
+        paid: num_(r[MEMBER.paid - 1]),
+        balance: num_(r[MEMBER.balance - 1]),
+        karma: num_(r[MEMBER.karma - 1]),
+        role: String(r[MEMBER.role - 1] || '').trim(),
+        rideDays: num_(r[MEMBER.rideDays - 1]),
+        tripCosts: num_(r[MEMBER.tripCosts - 1]),
+      };
+    });
+}
+
+/**
+ * Members plus guests. A guest is someone who has been in the car but isn't on
+ * the Members tab — they still accrue ride-days and a balance, so the app has
+ * to see them.
+ */
+function readMembers_(ss) {
+  var members = rawMembers_(ss);
+  var known = {};
+  members.forEach(function (m) {
+    if (!m.role) m.role = m.included ? 'Driver' : 'Non-driver';
+    known[m.name] = true;
+  });
+
+  readRideDays_(ss).forEach(function (r) {
+    if (known[r.name]) return;
+    members.push({
+      name: r.name,
+      included: false,
+      joinDate: '',
+      leaveDate: '',
+      daysActive: 0,
+      carCharge: r.carCharge,
+      paid: sumPaymentsFor_(ss, r.name),
+      balance: r.carCharge + r.tripCosts - sumPaymentsFor_(ss, r.name),
+      karma: 0,
+      role: 'Guest',
+      rideDays: r.rideDays,
+      tripCosts: r.tripCosts,
+    });
+  });
+
+  return members;
+}
+
+function readRideDays_(ss) {
+  var s = ss.getSheetByName(SHEETS.rideDays);
+  if (!s) return [];
+  var last = s.getLastRow();
+  if (last < FIRST_DATA_ROW) return [];
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 5).getValues()
+    .filter(function (r) { return String(r[RIDE.name - 1]).trim() !== ''; })
+    .map(function (r) {
+      return {
+        name: String(r[RIDE.name - 1]).trim(),
+        role: String(r[RIDE.role - 1] || ''),
+        rideDays: num_(r[RIDE.days - 1]),
+        carCharge: num_(r[RIDE.carCharge - 1]),
+        tripCosts: num_(r[RIDE.tripCosts - 1]),
+      };
+    });
+}
+
+function sumPaymentsFor_(ss, name) {
+  return readPayments_(ss).reduce(function (sum, p) {
+    return p.name === name ? sum + p.amount : sum;
+  }, 0);
+}
+
+function readPlaces_(ss) {
+  var s = ss.getSheetByName(SHEETS.places);
+  if (!s) return [];
+  var last = s.getLastRow();
+  if (last < FIRST_DATA_ROW) return [];
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 4).getValues()
+    .filter(function (r) { return String(r[PLACE.name - 1]).trim() !== ''; })
+    .map(function (r) {
+      return {
+        category: String(r[PLACE.category - 1]).trim(),
+        name: String(r[PLACE.name - 1]).trim(),
+        oneWayKm: num_(r[PLACE.km - 1]),
+        notes: String(r[PLACE.notes - 1] || ''),
+      };
+    });
+}
+
+function readPayments_(ss) {
+  var s = ss.getSheetByName(SHEETS.payments);
+  if (!s) return [];
+  var last = s.getLastRow();
+  if (last < FIRST_DATA_ROW) return [];
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 6).getValues()
+    .filter(function (r) { return String(r[PAY.name - 1]).trim() !== ''; })
+    .map(function (r) {
+      return {
+        date: iso_(r[PAY.date - 1]),
+        name: String(r[PAY.name - 1]).trim(),
+        type: String(r[PAY.type - 1] || 'cash'),
+        amount: num_(r[PAY.amount - 1]),
+        note: String(r[PAY.note - 1] || ''),
+      };
+    });
+}
+
+function readKarmaLog_(ss) {
+  var s = ss.getSheetByName(SHEETS.karma);
+  var last = s.getLastRow();
+  if (last < FIRST_DATA_ROW) return [];
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 4).getValues()
+    .filter(function (r) { return String(r[KARMA.name - 1]).trim() !== ''; })
+    .map(function (r) {
+      return {
+        date: iso_(r[KARMA.date - 1]),
+        name: String(r[KARMA.name - 1]).trim(),
+        action: String(r[KARMA.action - 1] || ''),
+        points: num_(r[KARMA.points - 1]),
       };
     });
 }
@@ -197,13 +334,14 @@ function readReservations_(ss) {
     });
 }
 
-function readRecentTrips_(ss, limit) {
+/** Every trip in the sheet — the per-person ledger needs the full set. */
+function readTrips_(ss) {
   var s = ss.getSheetByName(SHEETS.trips);
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
-  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.odoEnd).getValues()
+  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.activity).getValues()
     .filter(function (r) { return String(r[TRIP.driver - 1]).trim() !== ''; });
-  return rows.slice(-limit).map(function (r) {
+  return rows.map(function (r) {
     return {
       id: String(r[TRIP.id - 1] || ''),
       date: iso_(r[TRIP.date - 1]),
@@ -218,6 +356,7 @@ function readRecentTrips_(ss, limit) {
       perPerson: num_(r[TRIP.perPerson - 1]),
       riders: splitList_(r[TRIP.riders - 1]),
       tripType: String(r[TRIP.tripType - 1] || ''),
+      activity: String(r[TRIP.activity - 1] || ''),
     };
   });
 }
@@ -253,10 +392,22 @@ function completeTrip_(clientId, p) {
   sheet.getRange(row, TRIP.clientId).setValue(clientId);
   sheet.getRange(row, TRIP.odoStart).setValue(p.odoStart == null ? '' : p.odoStart);
   sheet.getRange(row, TRIP.odoEnd).setValue(p.odoEnd == null ? '' : p.odoEnd);
+  sheet.getRange(row, TRIP.activity).setValue(p.activity || '');
 
   if (p.reservationId) closeReservation_(ss, p.reservationId, 'completed', tripId);
 
+  // The driver fronted the tolls and parking, so credit them — otherwise they
+  // are charged a share of money they have already spent.
+  var when = p.date ? new Date(p.date) : new Date();
+  if (num_(p.tolls) > 0) {
+    writePayment_(ss, clientId + ':tolls', when, p.driver, 'tolls', num_(p.tolls), 'Trip ' + tripId);
+  }
+  if (num_(p.parking) > 0) {
+    writePayment_(ss, clientId + ':parking', when, p.driver, 'parking', num_(p.parking), 'Trip ' + tripId);
+  }
+
   SpreadsheetApp.flush();
+  rebuildRideDays_(ss);
   return {
     row: row,
     tripId: tripId,
@@ -315,20 +466,175 @@ function closeReservation_(ss, reservationId, status, tripId) {
 }
 
 function logKarma_(clientId, p) {
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.karma);
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.karma);
 
   var existing = findByClientId_(sheet, KARMA.clientId);
   if (existing[clientId]) return { row: existing[clientId], duplicate: true };
 
+  var when = p.date ? new Date(p.date) : new Date();
   var row = firstEmptyRow_(sheet, KARMA.name);
   sheet.getRange(row, KARMA.date, 1, 5).setValues([[
-    p.date ? new Date(p.date) : new Date(),
+    when,
     p.name || '',
     p.action || '',
     p.points || 0,
     clientId,
   ]]);
-  return { row: row };
+
+  // Refuelling earns the karma point *and* credits the euros spent. The two are
+  // independent: the point recognises the effort, the payment records the cash.
+  var amount = num_(p.amount);
+  if (amount > 0) {
+    writePayment_(ss, clientId + ':spend', when, p.name, 'fuel', amount, p.action || '');
+    rebuildRideDays_(ss);
+  }
+
+  return { row: row, credited: amount };
+}
+
+/**
+ * A payment reduces what someone owes: cash handed over, fuel bought at the
+ * pump, tolls or parking fronted on a trip.
+ */
+function logPayment_(clientId, p) {
+  var ss = SpreadsheetApp.getActive();
+  var amount = num_(p.amount);
+  if (!(amount > 0)) throw new Error('A payment needs a positive amount');
+  if (!String(p.name || '').trim()) throw new Error('A payment needs a name');
+
+  var result = writePayment_(
+    ss,
+    clientId,
+    p.date ? new Date(p.date) : new Date(),
+    p.name,
+    p.type || 'cash',
+    amount,
+    p.note || '',
+  );
+  rebuildRideDays_(ss);
+  return result;
+}
+
+function writePayment_(ss, clientId, when, name, type, amount, note) {
+  var sheet = ss.getSheetByName(SHEETS.payments);
+
+  var existing = findByClientId_(sheet, PAY.clientId);
+  if (existing[clientId]) return { row: existing[clientId], duplicate: true };
+
+  var row = firstEmptyRow_(sheet, PAY.name);
+  sheet.getRange(row, PAY.date, 1, 6).setValues([[
+    when, String(name).trim(), type, amount, note, clientId,
+  ]]);
+  return { row: row, amount: amount };
+}
+
+// ---------------------------------------------------------------- ride days
+
+/**
+ * Rebuilds the Ride Days tab, which is what makes the cost model work.
+ *
+ * The day rate is  totalCost / (member-days + non-driver ride-days).  Widening
+ * the denominator like this is what lets a non-driver pay the same per day as a
+ * member while still reducing what members owe — the two requirements are
+ * circular if you treat non-driver money as a credit applied afterwards.
+ *
+ * Counting has to happen here rather than in a formula: a person is in a trip
+ * if they are the driver or appear in the comma-separated Riders cell, and
+ * SEARCH("John", "Johnny, Ana") would happily match the wrong person.
+ */
+function rebuildRideDays_(ss) {
+  ss = ss || SpreadsheetApp.getActive();
+
+  var members = rawMembers_(ss);
+  var byName = {};
+  var order = [];
+
+  function person(name) {
+    var key = name.trim();
+    if (!key) return null;
+    if (!byName[key]) {
+      byName[key] = { name: key, days: {}, tripCosts: 0, member: null };
+      order.push(key);
+    }
+    return byName[key];
+  }
+
+  members.forEach(function (m) {
+    var p = person(m.name);
+    if (p) p.member = m;
+  });
+
+  // Walk the trips, attributing each one to everyone who was in the car.
+  var trips = ss.getSheetByName(SHEETS.trips);
+  var lastTrip = trips.getLastRow();
+  if (lastTrip >= FIRST_DATA_ROW) {
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.activity).getValues();
+    rows.forEach(function (r) {
+      var driver = String(r[TRIP.driver - 1]).trim();
+      if (!driver) return;
+
+      var riders = splitList_(r[TRIP.riders - 1]);
+      var occupants = [driver].concat(riders);
+      var dayKey = dateKey_(r[TRIP.date - 1]);
+      var perPerson = num_(r[TRIP.perPerson - 1]);
+
+      occupants.forEach(function (name) {
+        var p = person(name);
+        if (!p) return;
+        if (dayKey) p.days[dayKey] = true;
+        p.tripCosts += perPerson;
+      });
+    });
+  }
+
+  // Anyone not paying into the rental is charged for the days they rode.
+  var memberDays = 0;
+  var riderDays = 0;
+  order.forEach(function (key) {
+    var p = byName[key];
+    p.rideDays = Object.keys(p.days).length;
+    p.included = !!(p.member && p.member.included);
+    if (p.included) memberDays += p.member.daysActive;
+    else riderDays += p.rideDays;
+  });
+
+  var settings = ss.getSheetByName(SHEETS.settings);
+  var totalCost = num_(settings.getRange('B3').getValue());
+  var denominator = memberDays + riderDays;
+  var dayRate = denominator > 0 ? totalCost / denominator : 0;
+
+  var out = order.map(function (key) {
+    var p = byName[key];
+    var chargedDays = p.included ? p.member.daysActive : p.rideDays;
+    return [
+      p.name,
+      p.member ? (p.member.role || (p.included ? 'Driver' : 'Non-driver')) : 'Guest',
+      p.rideDays,
+      chargedDays * dayRate,
+      p.tripCosts,
+    ];
+  });
+
+  var sheet = ss.getSheetByName(SHEETS.rideDays);
+  var previousRows = Math.max(sheet.getLastRow() - 2, 0);
+  if (previousRows > 0) sheet.getRange(FIRST_DATA_ROW, 1, previousRows, 5).clearContent();
+  if (out.length) sheet.getRange(FIRST_DATA_ROW, 1, out.length, 5).setValues(out);
+
+  // B12 is a plain value, not a formula — the count comes from this walk.
+  settings.getRange('B12').setValue(riderDays);
+  SpreadsheetApp.flush();
+
+  return { dayRate: dayRate, memberDays: memberDays, riderDays: riderDays, people: out.length };
+}
+
+/** Local calendar day, so two trips on one date count once. */
+function dateKey_(v) {
+  if (v instanceof Date) {
+    return Utilities.formatDate(v, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  }
+  var s = String(v || '').trim();
+  return s ? s.slice(0, 10) : '';
 }
 
 // ---------------------------------------------------------------- reset
@@ -367,9 +673,33 @@ function resetTestData_(p) {
 
   cleared.karma = clearRows_(ss.getSheetByName(SHEETS.karma), 5);
   cleared.reservations = clearRows_(ss.getSheetByName(SHEETS.reservations), 11);
+  cleared.payments = clearPaymentsKeepingPrepayments_(ss);
 
   SpreadsheetApp.flush();
+  rebuildRideDays_(ss);
   return { cleared: cleared, backup: backupName };
+}
+
+/**
+ * Wipes test payments but keeps prepayment rows — Robin's €465 is a real fact
+ * about the world, not test data, and re-entering it after every reset would be
+ * a trap worth avoiding.
+ */
+function clearPaymentsKeepingPrepayments_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.payments);
+  if (!sheet) return 0;
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return 0;
+
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, last - 2, 6).getValues();
+  var keep = rows.filter(function (r) {
+    return String(r[PAY.type - 1]).trim().toLowerCase() === 'prepayment' &&
+      String(r[PAY.name - 1]).trim() !== '';
+  });
+
+  sheet.getRange(FIRST_DATA_ROW, 1, rows.length, 6).clearContent();
+  if (keep.length) sheet.getRange(FIRST_DATA_ROW, 1, keep.length, 6).setValues(keep);
+  return rows.length - keep.length;
 }
 
 function clearRows_(sheet, width) {

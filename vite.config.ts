@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/*.png'],
       manifest: {
-        name: 'Quinta Car Share',
+        name: 'Soul & Surf Car Share',
         short_name: 'Car Share',
-        description: 'Reserve the car, log trips, track karma — Quinta Agave, August 2026.',
+        description: 'Reserve the car, log trips, track karma — Almádena, August 2026.',
         start_url: BASE,
         scope: BASE,
         display: 'standalone',

@@ -1,6 +1,6 @@
-# Quinta Car Share
+# Soul & Surf Car Share
 
-Phone-first PWA for the ~9-person car share at Quinta Agave, Almádena — August 2026.
+Phone-first PWA for the ~9-person car share at Soul & Surf, Almádena — August 2026.
 Reserve the car, log trips, tap karma, see what you owe. No login, works with no signal.
 
 The Google Sheet is the live source of truth; this app is a front-end onto it. Admin

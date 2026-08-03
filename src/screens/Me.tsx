@@ -12,7 +12,7 @@ interface Props {
 export function Me({ members, onChoose }: Props) {
   return (
     <>
-      <p class="eyebrow">Quinta Agave · August 2026</p>
+      <p class="eyebrow">Soul &amp; Surf · Almádena</p>
       <h1>Who are you?</h1>
       <p class="muted">Your phone remembers — you'll only pick this once.</p>
       <div class="spacer" />

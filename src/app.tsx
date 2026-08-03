@@ -7,6 +7,7 @@ import { Home } from './screens/Home';
 import { Karma } from './screens/Karma';
 import { LogTrip } from './screens/LogTrip';
 import { Me } from './screens/Me';
+import { PersonDetail } from './screens/PersonDetail';
 import { Reserve } from './screens/Reserve';
 import { TripSummary } from './screens/TripSummary';
 
@@ -16,7 +17,8 @@ export type Route =
   | { name: 'log'; reservationId?: string }
   | { name: 'summary'; cost: TripCost; destination: string }
   | { name: 'karma' }
-  | { name: 'balance' };
+  | { name: 'balance' }
+  | { name: 'person'; person: string };
 
 export function App() {
   const app = useApp();
@@ -30,6 +32,9 @@ export function App() {
   };
 
   const switchMember = () => {
+    // Easy to hit by accident on the way to something else, and it drops you
+    // back to the picker mid-task.
+    if (!confirm(`You're logged in as ${me}. Switch to someone else?`)) return;
     clearMe();
     setMeState(null);
   };
@@ -37,7 +42,7 @@ export function App() {
   if (!app.ready && app.loading) {
     return (
       <main class="shell center">
-        <p class="eyebrow">Quinta Agave</p>
+        <p class="eyebrow">Soul &amp; Surf</p>
         <h1>Car Share</h1>
         <p class="muted">Loading…</p>
       </main>
@@ -59,10 +64,15 @@ export function App() {
       <div class="topbar">
         {route.name === 'home' ? (
           <span class="eyebrow" style="margin:0">
-            Quinta Agave · Aug 26
+            Soul &amp; Surf · Aug 26
           </span>
         ) : (
-          <button class="back" onClick={() => setRoute({ name: 'home' })}>
+          <button
+            class="back"
+            onClick={() =>
+              setRoute(route.name === 'person' ? { name: 'balance' } : { name: 'home' })
+            }
+          >
             ← Back
           </button>
         )}
@@ -90,7 +100,8 @@ export function App() {
         />
       )}
       {route.name === 'karma' && <Karma me={me} />}
-      {route.name === 'balance' && <Balance me={me} />}
+      {route.name === 'balance' && <Balance me={me} onOpenPerson={(name) => setRoute({ name: 'person', person: name })} />}
+      {route.name === 'person' && <PersonDetail name={route.person} />}
     </main>
   );
 }

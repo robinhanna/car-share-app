@@ -17,10 +17,18 @@ function setupSheet() {
   setupReservations_(ss);
   setupKarmaActions_(ss);
   setupKarmaLog_(ss);
+  setupPlaces_(ss);
+  setupPayments_(ss);
+  setupRideDays_(ss);
+  setupSettings_(ss);
+  setupMembers_(ss);
   setupTripLog_(ss);
   var token = ensureToken_();
 
   SpreadsheetApp.flush();
+  var summary = rebuildRideDays_(ss);
+  Logger.log('Day rate: €' + summary.dayRate.toFixed(4) + ' (' + summary.memberDays +
+    ' member-days + ' + summary.riderDays + ' rider-days)');
   Logger.log('Setup complete.');
   Logger.log('APP_TOKEN = ' + token);
   Logger.log('Copy that value into the GitHub repository secret named APP_TOKEN.');
@@ -81,6 +89,169 @@ function setupKarmaLog_(ss) {
   }
 }
 
+function setupPlaces_(ss) {
+  var existing = ss.getSheetByName(SHEETS.places);
+  var sheet = existing || ss.insertSheet(SHEETS.places);
+
+  sheet.getRange('A1').setValue('Places — towns and activities for the destination picker')
+    .setFontWeight('bold');
+  sheet.getRange(2, 1, 1, 4).setValues([['Category', 'Name', 'One-way (km)', 'Notes']])
+    .setFontWeight('bold');
+  sheet.setFrozenRows(2);
+
+  // Seeded once. Distances are estimates from Almádena — correct them in place,
+  // setupSheet() will not overwrite them on a later run.
+  if (!existing) {
+    sheet.getRange(FIRST_DATA_ROW, 1, 23, 4).setValues([
+      ['Town', 'Almádena', 1, 'The village itself'],
+      ['Town', 'Burgau', 3, ''],
+      ['Town', 'Luz', 9, ''],
+      ['Town', 'Salema', 8, ''],
+      ['Town', 'Lagos', 13, 'Supermarkets, bars, train station'],
+      ['Town', 'Vila do Bispo', 15, ''],
+      ['Town', 'Sagres', 24, ''],
+      ['Town', 'Portimão', 30, 'Big shops, hospital'],
+      ['Town', 'Aljezur', 42, ''],
+      ['Town', 'Faro', 90, 'Airport'],
+      ['Town', 'Lisbon', 300, 'Rough estimate — check before relying on it'],
+      ['Activity', 'Groceries', '', ''],
+      ['Activity', 'Shopping', '', ''],
+      ['Activity', 'Party / night out', '', ''],
+      ['Activity', 'Restaurant', '', ''],
+      ['Activity', 'Beach', '', ''],
+      ['Activity', 'Pharmacy', '', ''],
+      ['Activity', 'Doctor / hospital', '', ''],
+      ['Activity', 'Airport run', '', ''],
+      ['Activity', 'Train / bus station', '', ''],
+      ['Activity', 'Sightseeing', '', ''],
+      ['Activity', 'Sports / gym', '', ''],
+      ['Activity', 'Other', '', ''],
+    ]);
+  }
+
+  var category = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Town', 'Activity'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(FIRST_DATA_ROW, 1, 200, 1).setDataValidation(category);
+}
+
+function setupPayments_(ss) {
+  var existing = ss.getSheetByName(SHEETS.payments);
+  var sheet = existing || ss.insertSheet(SHEETS.payments);
+
+  sheet.getRange('A1').setValue('Payments — money in: cash, fuel bought, tolls and parking fronted')
+    .setFontWeight('bold');
+  sheet.getRange(2, 1, 1, 6).setValues([['Date', 'Name', 'Type', 'Amount (€)', 'Note', 'Client ID']])
+    .setFontWeight('bold');
+  sheet.setFrozenRows(2);
+  sheet.getRange(FIRST_DATA_ROW, PAY.date, 500, 1).setNumberFormat('yyyy-mm-dd');
+  sheet.getRange(FIRST_DATA_ROW, PAY.amount, 500, 1).setNumberFormat('€#,##0.00');
+
+  var type = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['cash', 'fuel', 'tolls', 'parking', 'prepayment'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(FIRST_DATA_ROW, PAY.type, 500, 1).setDataValidation(type);
+
+  // Robin fronted the whole rental — that is a payment, and without it his
+  // balance would read as though he owed his own share.
+  if (!existing) {
+    var settings = ss.getSheetByName(SHEETS.settings);
+    var total = settings.getRange('B3').getValue();
+    var start = settings.getRange('B4').getValue();
+    sheet.getRange(FIRST_DATA_ROW, 1, 1, 6).setValues([[
+      start, ADMIN_NAME, 'prepayment', total, 'Full rental paid upfront', 'seed-prepayment',
+    ]]);
+  }
+}
+
+function setupRideDays_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.rideDays) || ss.insertSheet(SHEETS.rideDays);
+
+  sheet.getRange('A1')
+    .setValue('Ride Days — rebuilt automatically. Do not edit; your changes will be overwritten.')
+    .setFontWeight('bold');
+  sheet.getRange(2, 1, 1, 5)
+    .setValues([['Name', 'Role', 'Ride days', 'Car charge (€)', 'Trip costs (€)']])
+    .setFontWeight('bold');
+  sheet.setFrozenRows(2);
+  sheet.getRange(FIRST_DATA_ROW, RIDE.carCharge, 200, 2).setNumberFormat('€#,##0.00');
+}
+
+function setupSettings_(ss) {
+  var s = ss.getSheetByName(SHEETS.settings);
+  s.getRange('A12').setValue('Non-driver ride days (auto)');
+  s.getRange('A13').setValue('Day rate (€/day, auto)');
+  s.getRange('B13').setFormula('=IFERROR(B3/(B6+B12);0)');
+  s.getRange('B13').setNumberFormat('€#,##0.0000');
+  if (String(s.getRange('B12').getValue()).trim() === '') s.getRange('B12').setValue(0);
+}
+
+/**
+ * Members gains Role, Ride Days and Trip Costs, and F/G/H change meaning:
+ *   F  car charge  = (days if paying in, else ride-days) × day rate
+ *   G  paid        = everything on the Payments tab for this person
+ *   H  balance     = F + trip costs − paid
+ */
+function setupMembers_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.members);
+
+  [[MEMBER.role, 'Role'], [MEMBER.rideDays, 'Ride Days'], [MEMBER.tripCosts, 'Trip Costs (€)']]
+    .forEach(function (h) {
+      var cell = sheet.getRange(2, h[0]);
+      if (String(cell.getValue()).trim() === '') cell.setValue(h[1]).setFontWeight('bold');
+    });
+  sheet.getRange(2, MEMBER.share).setValue('Car Charge (€)');
+  sheet.getRange(2, MEMBER.paid).setValue('Paid (€)');
+
+  var role = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Driver', 'Non-driver'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(FIRST_DATA_ROW, MEMBER.role, MEMBER_ROWS, 1).setDataValidation(role);
+
+  for (var i = 0; i < MEMBER_ROWS; i++) {
+    var r = FIRST_DATA_ROW + i;
+    setFormulaVerified_(sheet.getRange(r, MEMBER.share),
+      '=IF($A{r}="";"";IF($B{r}="Yes";$E{r};$K{r})*Settings!$B$13)'.replace(/\{r\}/g, r));
+    setFormulaVerified_(sheet.getRange(r, MEMBER.paid),
+      '=IF($A{r}="";"";SUMIF(Payments!$B:$B;$A{r};Payments!$D:$D))'.replace(/\{r\}/g, r));
+    setFormulaVerified_(sheet.getRange(r, MEMBER.balance),
+      '=IF($A{r}="";"";$F{r}+$L{r}-$G{r})'.replace(/\{r\}/g, r));
+    setFormulaVerified_(sheet.getRange(r, MEMBER.rideDays),
+      "=IF($A{r}=\"\";\"\";IFERROR(VLOOKUP($A{r};'Ride Days'!$A$3:$E$200;3;FALSE);0))".replace(/\{r\}/g, r));
+    setFormulaVerified_(sheet.getRange(r, MEMBER.tripCosts),
+      "=IF($A{r}=\"\";\"\";IFERROR(VLOOKUP($A{r};'Ride Days'!$A$3:$E$200;5;FALSE);0))".replace(/\{r\}/g, r));
+
+    var roleCell = sheet.getRange(r, MEMBER.role);
+    var hasName = String(sheet.getRange(r, MEMBER.name).getValue()).trim() !== '';
+    if (hasName && String(roleCell.getValue()).trim() === '') roleCell.setValue('Driver');
+  }
+
+  sheet.getRange(FIRST_DATA_ROW, MEMBER.share, MEMBER_ROWS, 3).setNumberFormat('€#,##0.00');
+  sheet.getRange(FIRST_DATA_ROW, MEMBER.tripCosts, MEMBER_ROWS, 1).setNumberFormat('€#,##0.00');
+}
+
+/**
+ * Writes a formula with semicolon separators, falling back to commas.
+ *
+ * This sheet's locale wants semicolons — setFormula() is documented as
+ * US-style but does not behave that way here, which cost us the whole Distance
+ * column the first time round. Semicolons first, since we know which way this
+ * sheet leans.
+ */
+function setFormulaVerified_(range, semicolonFormula) {
+  range.setFormula(semicolonFormula);
+  SpreadsheetApp.flush();
+  var v = range.getValue();
+  if (String(v).indexOf('#') !== 0 && String(v) !== '#ERROR!') return true;
+
+  range.setFormula(semicolonFormula.replace(/;/g, ','));
+  SpreadsheetApp.flush();
+  return String(range.getValue()).indexOf('#') !== 0;
+}
+
 function setupTripLog_(ss) {
   var sheet = ss.getSheetByName(SHEETS.trips);
 
@@ -92,6 +263,7 @@ function setupTripLog_(ss) {
     [TRIP.clientId, 'Client ID'],
     [TRIP.odoStart, 'Odo Start (km)'],
     [TRIP.odoEnd, 'Odo End (km)'],
+    [TRIP.activity, 'Activity'],
   ];
   headers.forEach(function (h) {
     var cell = sheet.getRange(2, h[0]);
@@ -130,15 +302,18 @@ function setupTripLog_(ss) {
 function applyDistanceFormulas_(sheet, lastRow) {
   var probe = findProbeRow_(sheet, lastRow);
 
-  if (writeDistanceFormulas_(sheet, lastRow, ',') && probeLooksRight_(sheet, probe)) {
-    Logger.log('Distance formulas applied (comma separators).');
+  // Semicolons first: we know from the first run that this sheet's locale wants
+  // them. The comma path stays as a fallback in case the sheet is ever recreated
+  // under a different locale.
+  if (writeDistanceFormulas_(sheet, lastRow, ';') && probeLooksRight_(sheet, probe)) {
+    Logger.log('Distance formulas applied (semicolon separators).');
     return;
   }
 
-  Logger.log('Comma separators did not evaluate — retrying with semicolons.');
-  writeDistanceFormulas_(sheet, lastRow, ';');
+  Logger.log('Semicolon separators did not evaluate — retrying with commas.');
+  writeDistanceFormulas_(sheet, lastRow, ',');
   if (probeLooksRight_(sheet, probe)) {
-    Logger.log('Distance formulas applied (semicolon separators).');
+    Logger.log('Distance formulas applied (comma separators).');
     return;
   }
 
@@ -151,13 +326,17 @@ function applyDistanceFormulas_(sheet, lastRow) {
 function writeDistanceFormulas_(sheet, lastRow, sep) {
   var formulas = [];
   for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    // Odometer wins; then a Surf Spots lookup; then Places, so a trip to Lagos
+    // gets its distance too; then whatever km was typed by hand.
+    var direction = '*IF($O' + r + '="One-way"' + sep + '1' + sep + '2)';
     formulas.push([
       '=IF(AND($R' + r + '=""' + sep + '$S' + r + '="")' + sep +
         'IF($C' + r + '=""' + sep + '""' + sep +
           "IFERROR(INDEX('Surf Spots'!$C$3:$C$55" + sep + "MATCH($C" + r +
-            sep + "'Surf Spots'!$B$3:$B$55" + sep + '0))' +
-          '*IF($O' + r + '="One-way"' + sep + '1' + sep + '2)' + sep +
-          'IF($D' + r + '=""' + sep + '""' + sep + '$D' + r + ')))' + sep +
+            sep + "'Surf Spots'!$B$3:$B$55" + sep + '0))' + direction + sep +
+          'IFERROR(INDEX(Places!$C$3:$C$200' + sep + 'MATCH($C' + r +
+            sep + 'Places!$B$3:$B$200' + sep + '0))' + direction + sep +
+          'IF($D' + r + '=""' + sep + '""' + sep + '$D' + r + '))))' + sep +
         '$S' + r + '-$R' + r + ')',
     ]);
   }

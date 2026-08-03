@@ -7,7 +7,12 @@ export interface Settings {
   fuelPrice: number;
   consumption: number;
   costPerKm: number;
+  /** Non-driver ride-days — the other half of the day-rate denominator. */
+  riderDays: number;
+  dayRate: number;
 }
+
+export type Role = 'Driver' | 'Non-driver' | 'Guest';
 
 export interface Member {
   name: string;
@@ -15,10 +20,38 @@ export interface Member {
   joinDate: string;
   leaveDate: string;
   daysActive: number;
-  share: number;
+  /** Days × day rate — active days if paying into the rental, else ride-days. */
+  carCharge: number;
   paid: number;
   balance: number;
   karma: number;
+  role: Role;
+  rideDays: number;
+  tripCosts: number;
+}
+
+export type PaymentType = 'cash' | 'fuel' | 'tolls' | 'parking' | 'prepayment';
+
+export interface Payment {
+  date: string;
+  name: string;
+  type: PaymentType;
+  amount: number;
+  note: string;
+}
+
+export interface KarmaEntry {
+  date: string;
+  name: string;
+  action: string;
+  points: number;
+}
+
+export interface Place {
+  category: 'Town' | 'Activity';
+  name: string;
+  oneWayKm: number;
+  notes: string;
 }
 
 export interface Spot {
@@ -64,6 +97,7 @@ export interface Trip {
   perPerson: number;
   riders: string[];
   tripType: TripType;
+  activity: string;
 }
 
 export type TripType = 'Round trip' | 'One-way';
@@ -73,8 +107,12 @@ export interface Bootstrap {
   settings: Settings;
   members: Member[];
   spots: Spot[];
+  places: Place[];
   karmaActions: KarmaAction[];
+  karmaLog: KarmaEntry[];
+  payments: Payment[];
   reservations: Reservation[];
+  /** Every trip of the month — the per-person ledger needs the full set. */
   recentTrips: Trip[];
 }
 
@@ -83,6 +121,7 @@ export type OpName =
   | 'createReservation'
   | 'cancelReservation'
   | 'logKarma'
+  | 'logPayment'
   | 'resetTestData';
 
 export interface CompleteTripPayload {
@@ -98,6 +137,7 @@ export interface CompleteTripPayload {
   parking: number;
   notes: string;
   reservationId: string;
+  activity: string;
 }
 
 export interface CreateReservationPayload {
@@ -119,6 +159,16 @@ export interface LogKarmaPayload {
   name: string;
   action: string;
   points: number;
+  /** Euros spent, if the action involved money (refuelling). Credited as a payment. */
+  amount?: number;
+}
+
+export interface LogPaymentPayload {
+  date: string;
+  name: string;
+  type: PaymentType;
+  amount: number;
+  note: string;
 }
 
 /** Testing only. The literal guards against a stray call doing damage. */
@@ -131,6 +181,7 @@ export type OpPayload =
   | CreateReservationPayload
   | CancelReservationPayload
   | LogKarmaPayload
+  | LogPaymentPayload
   | ResetPayload;
 
 export interface Op {

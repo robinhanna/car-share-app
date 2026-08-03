@@ -284,3 +284,64 @@ h1 + .spacer + .card {
 .spacer {
   height: 18px;
 }
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icon-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin: -8px -6px 0 0;
+  border: 1px solid var(--sand);
+  border-radius: 50%;
+  background: var(--paper);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+}
+
+.or {
+  margin: -4px 0 12px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.chip--add {
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
+/* A whole list row that behaves like a button, without looking like one. */
+.row-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chev {
+  color: var(--ink-soft);
+  font-weight: 400;
+}

@@ -1,7 +1,8 @@
 import type { Route } from '../app';
 import type { Reservation } from '../api/types';
-import { euro } from '../lib/cost';
-import { queueOp, useApp } from '../state/store';
+import { dayRate, euro, personLedger } from '../lib/cost';
+import { timeLabel } from '../lib/dates';
+import { queueOp, sync, useApp } from '../state/store';
 
 interface Props {
   me: string;
@@ -9,7 +10,7 @@ interface Props {
 }
 
 export function Home({ me, onNavigate }: Props) {
-  const { bootstrap } = useApp();
+  const { bootstrap, syncing } = useApp();
   const reservations = bootstrap?.reservations ?? [];
   const now = Date.now();
 
@@ -20,12 +21,38 @@ export function Home({ me, onNavigate }: Props) {
     .filter((r) => new Date(r.start).getTime() > now)
     .sort((a, b) => a.start.localeCompare(b.start));
 
-  const myBalance = bootstrap?.members.find((m) => m.name === me)?.balance ?? 0;
+  // Compute rather than trust member.balance: the sheet's column doesn't know
+  // about anything still sitting in this phone's outbox.
+  const members = bootstrap?.members ?? [];
+  const settings = bootstrap?.settings;
+  const mine = members.find((m) => m.name === me);
+  const myLedger =
+    mine && settings
+      ? personLedger(
+          mine,
+          bootstrap?.recentTrips ?? [],
+          bootstrap?.payments ?? [],
+          dayRate(members, settings),
+        )
+      : null;
+  const owed = myLedger ? myLedger.balance : 0;
 
   return (
     <>
       <div class="card card--status">
-        <p class="eyebrow">The car</p>
+        <div class="card-head">
+          <p class="eyebrow">The car</p>
+          {/* Pull-to-refresh can't fire once the app is installed to the home
+              screen, so the gesture needs a button behind it. */}
+          <button
+            class="icon-btn"
+            aria-label="Refresh"
+            disabled={syncing}
+            onClick={() => void sync()}
+          >
+            {syncing ? '…' : '↻'}
+          </button>
+        </div>
         {active ? (
           <>
             <p class="status-line">
@@ -59,7 +86,8 @@ export function Home({ me, onNavigate }: Props) {
           Karma
         </button>
         <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'balance' })}>
-          What I owe · <span class="amount">{euro(myBalance)}</span>
+          {owed < -0.01 ? "I'm owed" : 'What I owe'} ·{' '}
+          <span class="amount">{euro(Math.abs(owed))}</span>
         </button>
       </div>
 
@@ -103,13 +131,3 @@ function CancelButton({ reservation }: { reservation: Reservation }) {
   );
 }
 
-function timeLabel(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  if (sameDay) return time;
-  return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })} ${time}`;
-}

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'preact/hooks';
-import type { TripType } from '../api/types';
+import type { Place, Spot, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
+import { localDateInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
+import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
 
 interface Props {
@@ -15,10 +17,15 @@ type Mode = 'spot' | 'odometer' | 'manual';
 export function LogTrip({ me, reservationId, onDone }: Props) {
   const { bootstrap } = useApp();
   const spots = bootstrap?.spots ?? [];
+  const places = bootstrap?.places ?? [];
   const settings = bootstrap?.settings;
 
   const [mode, setMode] = useState<Mode>('spot');
-  const [spotName, setSpotName] = useState('');
+  const [date, setDate] = useState(localDateInput(new Date()));
+  const [destinationValue, setDestinationValue] = useState<DestinationValue>({
+    place: '',
+    activity: '',
+  });
   const [tripType, setTripType] = useState<TripType>('Round trip');
   const [manualKm, setManualKm] = useState('');
   const [odoStart, setOdoStart] = useState('');
@@ -29,7 +36,10 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const spot = spots.find((s) => s.name === spotName) ?? null;
+  // The distance can come from either table — a surf spot or a town in Places.
+  const spot =
+    spots.find((s) => s.name === destinationValue.place) ??
+    toSpot(places.find((p) => p.name === destinationValue.place && p.category === 'Town'));
 
   const distanceKm = useMemo(
     () =>
@@ -55,16 +65,19 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
       )
     : null;
 
-  const destination = mode === 'spot' ? spotName : notes.trim() || 'Other';
+  const destination = mode === 'spot' ? destinationValue.place : notes.trim() || 'Other';
   const canSave = distanceKm > 0 && !saving;
 
   const save = async () => {
     if (!cost) return;
     setSaving(true);
     await queueOp('completeTrip', {
-      date: new Date().toISOString(),
+      // Keep the time of day so two trips on one date still read in order, but
+      // let the chosen day win — people log yesterday's drive over breakfast.
+      date: new Date(`${date}T${new Date().toTimeString().slice(0, 8)}`).toISOString(),
       driver: me,
-      destination: mode === 'spot' ? spotName : '',
+      destination: mode === 'spot' ? destinationValue.place : '',
+      activity: mode === 'spot' ? destinationValue.activity : '',
       manualKm: mode === 'manual' ? numOrNull(manualKm) : null,
       odoStart: mode === 'odometer' ? numOrNull(odoStart) : null,
       odoEnd: mode === 'odometer' ? numOrNull(odoEnd) : null,
@@ -84,6 +97,16 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
       <h1>Log a trip</h1>
       <div class="spacer" />
 
+      <label class="field">
+        <span>When</span>
+        <input
+          type="date"
+          value={date}
+          max={localDateInput(new Date())}
+          onInput={(e) => setDate((e.target as HTMLInputElement).value)}
+        />
+      </label>
+
       <div class="segmented" style="grid-template-columns:1fr 1fr 1fr">
         <button aria-pressed={mode === 'spot'} onClick={() => setMode('spot')}>
           Spot
@@ -99,24 +122,11 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
 
       {mode === 'spot' && (
         <>
-          <label class="field">
-            <span>Where did you go?</span>
-            <select
-              value={spotName}
-              onChange={(e) => setSpotName((e.target as HTMLSelectElement).value)}
-            >
-              <option value="">Pick a spot…</option>
-              {groupByZone(spots).map(([zone, list]) => (
-                <optgroup key={zone} label={zone}>
-                  {list.map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name} · {s.oneWayKm} km each way
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+          <DestinationPicker
+            value={destinationValue}
+            onChange={setDestinationValue}
+            label="Where did you go?"
+          />
 
           <div class="field">
             <span>Trip type</span>
@@ -221,14 +231,17 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
   );
 }
 
-function groupByZone<T extends { zone: string }>(items: T[]): [string, T[]][] {
-  const map = new Map<string, T[]>();
-  items.forEach((item) => {
-    const list = map.get(item.zone) ?? [];
-    list.push(item);
-    map.set(item.zone, list);
-  });
-  return [...map.entries()];
+/** Towns carry a one-way distance too, so they can drive the same maths. */
+function toSpot(place: Place | undefined): Spot | null {
+  if (!place || !place.oneWayKm) return null;
+  return {
+    zone: 'Town',
+    name: place.name,
+    oneWayKm: place.oneWayKm,
+    roundTripKm: place.oneWayKm * 2,
+    driveMinutes: 0,
+    notes: place.notes,
+  };
 }
 
 function numOrNull(v: string): number | null {

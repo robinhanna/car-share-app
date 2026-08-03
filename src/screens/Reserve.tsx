@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { newClientId } from '../api/client';
+import { localDateTimeInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
+import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
 
 interface Props {
@@ -10,12 +12,11 @@ interface Props {
 
 export function Reserve({ me, onDone }: Props) {
   const { bootstrap } = useApp();
-  const spots = bootstrap?.spots ?? [];
   const reservations = bootstrap?.reservations ?? [];
 
   const [start, setStart] = useState(defaultStart());
   const [end, setEnd] = useState(defaultEnd());
-  const [destination, setDestination] = useState('');
+  const [destination, setDestination] = useState<DestinationValue>({ place: '', activity: '' });
   const [riders, setRiders] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -38,7 +39,7 @@ export function Reserve({ me, onDone }: Props) {
       riders,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
-      destination,
+      destination: [destination.place, destination.activity].filter(Boolean).join(' · '),
       notes,
     });
     onDone();
@@ -74,23 +75,18 @@ export function Reserve({ me, onDone }: Props) {
         </div>
       )}
 
-      <label class="field">
-        <span>Where to (optional)</span>
-        <input
-          type="text"
-          list="spot-list"
-          value={destination}
-          placeholder="Zavial, shops, airport…"
-          onInput={(e) => setDestination((e.target as HTMLInputElement).value)}
-        />
-        <datalist id="spot-list">
-          {spots.map((s) => (
-            <option key={s.name} value={s.name} />
-          ))}
-        </datalist>
-      </label>
+      <DestinationPicker
+        value={destination}
+        onChange={setDestination}
+        label="Where to (optional)"
+      />
 
-      <RiderPicker me={me} selected={riders} onChange={setRiders} />
+      <RiderPicker
+        me={me}
+        selected={riders}
+        onChange={setRiders}
+        label="Who else will be in the car?"
+      />
 
       <label class="field">
         <span>Notes</span>
@@ -114,16 +110,11 @@ export function Reserve({ me, onDone }: Props) {
 function defaultStart(): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() > 30 ? 60 : 30, 0, 0);
-  return localInput(d);
+  return localDateTimeInput(d);
 }
 
 function defaultEnd(): string {
   const d = new Date(defaultStart());
   d.setHours(d.getHours() + 3);
-  return localInput(d);
-}
-
-function localInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return localDateTimeInput(d);
 }

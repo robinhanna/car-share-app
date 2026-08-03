@@ -1,4 +1,4 @@
-import type { Bootstrap, Op, PostResponse } from './types';
+import type { Bootstrap, Member, Op, PostResponse, Role } from './types';
 
 /**
  * Dev-only stand-in for the Sheet, so the app can be worked on before the
@@ -20,13 +20,15 @@ let bootstrap: Bootstrap = {
     fuelPrice,
     consumption,
     costPerKm: (fuelPrice * consumption) / 100,
+    riderDays: 2,
+    dayRate: 465 / 126,
   },
   members: [
-    member('Robin', true, 31, 116.25, 116.25, 3),
-    member('Julia', true, 31, 116.25, 50, 5),
-    member('Jonas', true, 31, 116.25, 0, 1),
-    member('John', true, 31, 116.25, 116.25, 0),
-    member('Roberta', false, 31, 0, 0, 2),
+    member('Robin', true, 31, 3),
+    member('Julia', true, 31, 5),
+    member('Jonas', true, 31, 1),
+    member('John', true, 31, 0),
+    member('Roberta', false, 31, 2, 'Non-driver', 2),
   ],
   spots: [
     spot('Near base (Burgau-Lagos)', 'Praia do Burgau', 3, 5),
@@ -39,11 +41,30 @@ let bootstrap: Bootstrap = {
     spot('Sagres & west tip', 'Cordoama', 20, 25),
     spot('Alvor / Portimão', 'Alvor', 19, 24),
   ],
+  places: [
+    { category: 'Town', name: 'Lagos', oneWayKm: 13, notes: '' },
+    { category: 'Town', name: 'Burgau', oneWayKm: 3, notes: '' },
+    { category: 'Town', name: 'Portimão', oneWayKm: 30, notes: '' },
+    { category: 'Town', name: 'Faro', oneWayKm: 90, notes: 'Airport' },
+    { category: 'Activity', name: 'Groceries', oneWayKm: 0, notes: '' },
+    { category: 'Activity', name: 'Party / night out', oneWayKm: 0, notes: '' },
+    { category: 'Activity', name: 'Pharmacy', oneWayKm: 0, notes: '' },
+  ],
   karmaActions: [
     { action: 'Cleaned the car', points: 1 },
     { action: 'Refuelled', points: 2 },
     { action: 'Drove others around', points: 1 },
     { action: 'Sorted the boards / gear', points: 1 },
+  ],
+  karmaLog: [{ date: '2026-08-03', name: 'Julia', action: 'Cleaned the car', points: 1 }],
+  payments: [
+    {
+      date: '2026-08-01',
+      name: 'Robin',
+      type: 'prepayment',
+      amount: 465,
+      note: 'Full rental paid upfront',
+    },
   ],
   reservations: [
     {
@@ -66,20 +87,25 @@ function member(
   name: string,
   included: boolean,
   daysActive: number,
-  share: number,
-  paid: number,
   karma: number,
-) {
+  role: Role = 'Driver',
+  rideDays = 0,
+): Member {
+  const rate = 465 / 126;
+  const carCharge = (included ? daysActive : rideDays) * rate;
   return {
     name,
     included,
     joinDate: '2026-08-01T00:00:00.000Z',
     leaveDate: '2026-08-31T00:00:00.000Z',
     daysActive,
-    share,
-    paid,
-    balance: share - paid,
+    carCharge,
+    paid: 0,
+    balance: carCharge,
     karma,
+    role,
+    rideDays,
+    tripCosts: 0,
   };
 }
 
