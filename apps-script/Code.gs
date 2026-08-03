@@ -48,7 +48,16 @@ var RIDE = { name: 1, role: 2, days: 3, carCharge: 4, tripCosts: 5 };
 var PLACE = { category: 1, name: 2, km: 3, notes: 4 };
 
 var FIRST_DATA_ROW = 3;
-var MEMBER_ROWS = 10;
+
+/**
+ * Seats on the Members tab (rows 3-22). Ten was the spreadsheet's original
+ * block and the group already fills nine of them; an eleventh name would land
+ * outside every formula and every range and quietly show as €0.00.
+ */
+var MEMBER_ROWS = 20;
+
+/** Rows the Members block must not mistake for people. */
+var MEMBER_FURNITURE = /^(total|check\b)/i;
 
 /** Who fronted the rental. Used to seed the prepayment row. */
 var ADMIN_NAME = 'Robin';
@@ -149,7 +158,14 @@ function rawMembers_(ss) {
   var s = ss.getSheetByName(SHEETS.members);
   var rows = s.getRange(FIRST_DATA_ROW, 1, MEMBER_ROWS, MEMBER.tripCosts).getValues();
   return rows
-    .filter(function (r) { return String(r[MEMBER.name - 1]).trim() !== ''; })
+    .filter(function (r) {
+      // The widened block spans the old TOTAL and Check rows. setupSheet moves
+      // them out of the way, but this guards the window between someone
+      // deploying new code and running the migration — otherwise "TOTAL" shows
+      // up in the app as a member.
+      var name = String(r[MEMBER.name - 1]).trim();
+      return name !== '' && !MEMBER_FURNITURE.test(name);
+    })
     .map(function (r) {
       return {
         name: String(r[MEMBER.name - 1]).trim(),

@@ -21,6 +21,7 @@ function setupSheet() {
   setupPayments_(ss);
   setupRideDays_(ss);
   setupSettings_(ss);
+  migrateMembersTotals_(ss);
   setupMemberRoster_(ss);
   setupMembers_(ss);
   setupTripLog_(ss);
@@ -211,6 +212,57 @@ var ROSTER = [
 ];
 
 /**
+ * Row layout of the Members block. Computed on call rather than at file scope:
+ * these depend on constants in Code.gs, and Apps Script does not guarantee
+ * which file it evaluates first.
+ */
+function memberRows_() {
+  var last = FIRST_DATA_ROW + MEMBER_ROWS - 1; // 22
+  return { first: FIRST_DATA_ROW, last: last, total: last + 2, check: last + 3 };
+}
+
+/**
+ * Moves the TOTAL and Check rows below the widened member block.
+ *
+ * The spreadsheet put them at rows 14 and 15, which sat safely under a ten-row
+ * block but now falls inside a twenty-row one. Left alone, "TOTAL" would be
+ * read as a member's name, given a car charge, and counted in the split.
+ *
+ * The Check row is worth preserving: SUM(car charges) − total cost should read
+ * 0.00 under the day-rate model, because (member-days + rider-days) × day rate
+ * is exactly the rental cost. A free assertion that the model balances, sitting
+ * in the sheet where Robin can see it.
+ */
+function migrateMembersTotals_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.members);
+  var rows = memberRows_();
+
+  if (String(sheet.getRange(rows.total, 1).getValue()).trim().toUpperCase() === 'TOTAL') {
+    return; // already migrated
+  }
+
+  // Clear wherever the old pair currently sits inside the new block.
+  for (var r = rows.first; r <= rows.last; r++) {
+    var label = String(sheet.getRange(r, 1).getValue()).trim();
+    if (MEMBER_FURNITURE.test(label)) sheet.getRange(r, 1, 1, MEMBER.tripCosts).clearContent();
+  }
+
+  sheet.getRange(rows.total, 1).setValue('TOTAL').setFontWeight('bold');
+  setFormulaVerified_(sheet.getRange(rows.total, MEMBER.days),
+    '=SUM(E' + rows.first + ':E' + rows.last + ')');
+  setFormulaVerified_(sheet.getRange(rows.total, MEMBER.share),
+    '=SUM(F' + rows.first + ':F' + rows.last + ')');
+  sheet.getRange(rows.total, MEMBER.share).setNumberFormat('€#,##0.00');
+
+  sheet.getRange(rows.check, 1).setValue('Check (should read 0.00)');
+  setFormulaVerified_(sheet.getRange(rows.check, MEMBER.share),
+    '=ROUND(F' + rows.total + '-Settings!$B$3;2)');
+  sheet.getRange(rows.check, MEMBER.share).setNumberFormat('0.00');
+
+  Logger.log('Members: TOTAL moved to row ' + rows.total + ', capacity now ' + MEMBER_ROWS + '.');
+}
+
+/**
  * Adds anyone missing from the Members tab. Existing rows are left exactly as
  * they are, so Robin's edits — and Roberta's status once she confirms — survive
  * a re-run.
@@ -272,6 +324,15 @@ function setupMembers_(ss) {
 
   for (var i = 0; i < MEMBER_ROWS; i++) {
     var r = FIRST_DATA_ROW + i;
+
+    // E and I came from the original spreadsheet and only existed on its ten
+    // rows. Writing them here makes the whole block self-contained, so a name
+    // added anywhere in it behaves like any other.
+    setFormulaVerified_(sheet.getRange(r, MEMBER.days),
+      '=IF($A{r}="";"";MIN($D{r};Settings!$B$5)-MAX($C{r};Settings!$B$4)+1)'.replace(/\{r\}/g, r));
+    setFormulaVerified_(sheet.getRange(r, MEMBER.karma),
+      "=IF($A{r}=\"\";\"\";IFERROR(SUMIF('Karma Log'!$B:$B;$A{r};'Karma Log'!$D:$D);0))".replace(/\{r\}/g, r));
+
     setFormulaVerified_(sheet.getRange(r, MEMBER.share),
       '=IF($A{r}="";"";IF($B{r}="Yes";$E{r};$K{r})*Settings!$B$13)'.replace(/\{r\}/g, r));
     setFormulaVerified_(sheet.getRange(r, MEMBER.paid),
