@@ -104,6 +104,7 @@ function applyOp_(op) {
     case 'cancelReservation': return cancelReservation_(op.payload || {});
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
     case 'logPayment': return logPayment_(op.clientId, op.payload || {});
+    case 'settleUp': return settleUp_(op.clientId, op.payload || {});
     case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
   }
@@ -514,6 +515,39 @@ function logPayment_(clientId, p) {
   );
   rebuildRideDays_(ss);
   return result;
+}
+
+/**
+ * Money changing hands between two people — almost always someone paying Robin.
+ *
+ * This writes *two* rows, because a transfer has two sides: the payer's debt
+ * falls and the receiver is owed that much less. Recording only the payer's
+ * side leaves the books out by the amount, which is how "everyone has settled
+ * up but Robin is still owed €200" happens.
+ *
+ * Fuel, tolls and parking stay single-entry on purpose — there the counterparty
+ * is the petrol station, not another member.
+ */
+function settleUp_(clientId, p) {
+  var ss = SpreadsheetApp.getActive();
+  var amount = num_(p.amount);
+  var from = String(p.from || '').trim();
+  var to = String(p.to || ADMIN_NAME).trim();
+
+  if (!(amount > 0)) throw new Error('A settle-up needs a positive amount');
+  if (!from || !to) throw new Error('A settle-up needs both people');
+  if (from === to) throw new Error('Cannot settle up with yourself');
+
+  var when = p.date ? new Date(p.date) : new Date();
+  var note = p.note ? String(p.note) : '';
+
+  var payer = writePayment_(ss, clientId + ':from', when, from, 'settlement', amount,
+    ('Settled with ' + to + (note ? ' — ' + note : '')));
+  var receiver = writePayment_(ss, clientId + ':to', when, to, 'settlement', -amount,
+    ('Received from ' + from + (note ? ' — ' + note : '')));
+
+  rebuildRideDays_(ss);
+  return { from: from, to: to, amount: amount, rows: [payer.row, receiver.row] };
 }
 
 function writePayment_(ss, clientId, when, name, type, amount, note) {

@@ -200,6 +200,26 @@ describe('person ledger', () => {
     expect(ledger.balance).toBeLessThan(0); // she is owed money
   });
 
+  it('moves both sides by the same amount when someone settles up', () => {
+    const people = [member({ name: 'Robin' }), member({ name: 'Julia' })];
+    const rate = dayRate(people, settings);
+    const before = people.map((m) => personLedger(m, [], [], rate));
+
+    // What the backend writes: the payer's row positive, the receiver's negative.
+    const settlement: Payment[] = [
+      { date: '2026-08-10', name: 'Julia', type: 'settlement', amount: 50, note: '' },
+      { date: '2026-08-10', name: 'Robin', type: 'settlement', amount: -50, note: '' },
+    ];
+    const after = people.map((m) => personLedger(m, [], settlement, rate));
+
+    expect(after[1].balance).toBeCloseTo(before[1].balance - 50, 6);
+    expect(after[0].balance).toBeCloseTo(before[0].balance + 50, 6);
+
+    // A transfer moves money between ledgers; it does not create or destroy any.
+    const sum = (ls: typeof before) => ls.reduce((s, l) => s + l.balance, 0);
+    expect(sum(after)).toBeCloseTo(sum(before), 6);
+  });
+
   it('leaves Robin owed the rest of the group after his prepayment', () => {
     const people = [
       member({ name: 'Robin' }),

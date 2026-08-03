@@ -26,12 +26,28 @@ export function Me({ members, onChoose }: Props) {
       ) : (
         <div class="btn-stack">
           {members.map((m) => (
-            <button key={m.name} class="btn btn--secondary" onClick={() => onChoose(m.name)}>
+            <button
+              key={m.name}
+              class={`btn btn--secondary name-btn ${m.included ? '' : 'name-btn--rider'}`}
+              onClick={() => onChoose(m.name)}
+            >
               {m.name}
+              <span class="role">{m.included ? 'member' : 'rider'}</span>
             </button>
           ))}
         </div>
       )}
+
+      <p class="legend">
+        <span>
+          <span class="dot" />
+          member — pays into the rental
+        </span>
+        <span>
+          <span class="dot dot--rider" />
+          rider — pays per day in the car
+        </span>
+      </p>
 
       <div class="spacer" />
       <p class="muted">Not on the list? Ask Robin to add you to the sheet.</p>

@@ -49,11 +49,12 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
             key={m.name}
             type="button"
             class="chip"
+            data-role={m.included ? 'driver' : 'rider'}
             aria-pressed={selected.includes(m.name)}
             onClick={() => toggle(m.name)}
           >
+            <span class={`dot ${m.included ? '' : 'dot--rider'}`} />
             {m.name}
-            {m.included ? '' : ' ·'}
           </button>
         ))}
 
@@ -62,10 +63,12 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
             key={name}
             type="button"
             class="chip"
+            data-role="rider"
             aria-pressed={true}
             onClick={() => toggle(name)}
           >
-            {name} ·
+            <span class="dot dot--rider" />
+            {name}
           </button>
         ))}
 
@@ -97,8 +100,15 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
         </div>
       )}
 
-      <p class="muted" style="margin:8px 0 0">
-        · marks someone who isn't paying into the rental — they're charged for the days they ride.
+      <p class="legend">
+        <span>
+          <span class="dot" />
+          pays into the rental
+        </span>
+        <span>
+          <span class="dot dot--rider" />
+          pays per day ridden
+        </span>
       </p>
     </div>
   );

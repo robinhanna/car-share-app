@@ -94,7 +94,7 @@ export function Home({ me, onNavigate }: Props) {
       {upcoming.length > 0 && (
         <>
           <div class="spacer" />
-          <p class="eyebrow">Coming up</p>
+          <p class="section-title">Coming up</p>
           <ul class="list">
             {upcoming.slice(0, 5).map((r) => (
               <li key={r.id}>

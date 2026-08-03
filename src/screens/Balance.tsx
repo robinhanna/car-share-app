@@ -1,7 +1,14 @@
 import { useState } from 'preact/hooks';
 import type { Member } from '../api/types';
 import { ADMIN_MEMBER, RESET_ENABLED } from '../config';
-import { dayRate, euro, personLedger, type PersonLedger } from '../lib/cost';
+import {
+  dayRate,
+  euro,
+  personLedger,
+  totalMemberDays,
+  totalRiderDays,
+  type PersonLedger,
+} from '../lib/cost';
 import { resetAllData, useApp } from '../state/store';
 
 interface Props {
@@ -25,14 +32,20 @@ export function Balance({ me, onOpenPerson }: Props) {
 
   return (
     <>
-      <p class="eyebrow">The rental</p>
+      <p class="kicker">The rental</p>
       <h1>{mine && mine.balance < 0 ? "What you're owed" : 'What you owe'}</h1>
       <div class="spacer" />
 
       {mine && (
         <div class="card card--status center">
           <p class="muted">{mine.balance < 0 ? 'The group owes you' : 'You owe'}</p>
-          <p class="summary-total">{euro(Math.abs(mine.balance))}</p>
+          <p
+            class={`summary-total ${
+              mine.balance > 0.01 ? 'summary-total--owed' : 'summary-total--clear'
+            }`}
+          >
+            {euro(Math.abs(mine.balance))}
+          </p>
           <p class="muted">
             {mine.chargedDays} days × {euro(rate)} = {euro(mine.carCharge)} car
             {mine.tripCosts > 0 ? ` · ${euro(mine.tripCosts)} trips` : ''}
@@ -42,9 +55,10 @@ export function Balance({ me, onOpenPerson }: Props) {
       )}
 
       <Group
-        title="Drivers"
+        title="Members"
         note="Paying into the rental for every day they're here"
         ledgers={drivers}
+        role="driver"
         onOpen={onOpenPerson}
       />
 
@@ -53,6 +67,7 @@ export function Balance({ me, onOpenPerson }: Props) {
           title="Riders"
           note="Charged the same day rate, but only for days they were in the car"
           ledgers={riders}
+          role="rider"
           onOpen={onOpenPerson}
         />
       )}
@@ -61,8 +76,8 @@ export function Balance({ me, onOpenPerson }: Props) {
         <>
           <div class="spacer" />
           <p class="muted">
-            {euro(settings.totalCost)} split across {settings.totalMemberDays} member-days
-            {settings.riderDays > 0 ? ` + ${settings.riderDays} rider-days` : ''} ={' '}
+            {euro(settings.totalCost)} split across {totalMemberDays(members)} member-days
+            {totalRiderDays(members) > 0 ? ` + ${totalRiderDays(members)} rider-days` : ''} ={' '}
             <strong>{euro(rate)}/day</strong> for everyone. Fuel{' '}
             {settings.fuelPrice.toFixed(2)} €/L at {settings.consumption} L/100km ={' '}
             {settings.costPerKm.toFixed(3)} €/km, split between whoever was in the car.
@@ -79,17 +94,25 @@ function Group({
   title,
   note,
   ledgers,
+  role,
   onOpen,
 }: {
   title: string;
   note: string;
   ledgers: PersonLedger[];
+  role: 'driver' | 'rider';
   onOpen: (name: string) => void;
 }) {
   return (
     <>
-      <div class="spacer" />
-      <p class="eyebrow">{title}</p>
+      {/* Sum of what's still outstanding, not the net — netting Robin's credit
+          against everyone's debt produces a number that means nothing. */}
+      <p class="section-title">
+        {title}
+        <span class="total amount--owed">
+          {euro(ledgers.reduce((s, l) => s + Math.max(l.balance, 0), 0))}
+        </span>
+      </p>
       <p class="muted" style="margin:0 0 6px">
         {note}
       </p>
@@ -98,7 +121,10 @@ function Group({
           <li key={l.name}>
             <button class="row-btn" onClick={() => onOpen(l.name)}>
               <span>
-                <strong>{l.name}</strong>
+                <strong>
+                  <span class={`dot ${role === 'driver' ? '' : 'dot--rider'}`} />
+                  {l.name}
+                </strong>
                 <br />
                 <span class="muted">
                   {l.chargedDays} days · {euro(l.carCharge + l.tripCosts)} charged

@@ -21,6 +21,7 @@ function setupSheet() {
   setupPayments_(ss);
   setupRideDays_(ss);
   setupSettings_(ss);
+  setupMemberRoster_(ss);
   setupMembers_(ss);
   setupTripLog_(ss);
   var token = ensureToken_();
@@ -149,7 +150,7 @@ function setupPayments_(ss) {
   sheet.getRange(FIRST_DATA_ROW, PAY.amount, 500, 1).setNumberFormat('€#,##0.00');
 
   var type = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['cash', 'fuel', 'tolls', 'parking', 'prepayment'], true)
+    .requireValueInList(['cash', 'fuel', 'tolls', 'parking', 'prepayment', 'settlement'], true)
     .setAllowInvalid(false)
     .build();
   sheet.getRange(FIRST_DATA_ROW, PAY.type, 500, 1).setDataValidation(type);
@@ -186,6 +187,64 @@ function setupSettings_(ss) {
   s.getRange('B13').setFormula('=IFERROR(B3/(B6+B12);0)');
   s.getRange('B13').setNumberFormat('€#,##0.0000');
   if (String(s.getRange('B12').getValue()).trim() === '') s.getRange('B12').setValue(0);
+}
+
+/**
+ * The August 2026 group. Non-drivers aren't paying into the rental, but they
+ * are full users of the app: they pick their own name, ride along, and are
+ * charged for the days they were in the car.
+ *
+ * George and Holly can drive — they opted out of the membership, which is a
+ * money question, not a licence one. Roberta hasn't arrived; flip her Include?
+ * to Yes if she joins the membership.
+ */
+var ROSTER = [
+  { name: 'Robin', included: 'Yes', role: 'Driver' },
+  { name: 'Julia', included: 'Yes', role: 'Driver' },
+  { name: 'Jonas', included: 'Yes', role: 'Driver' },
+  { name: 'John', included: 'Yes', role: 'Driver' },
+  { name: 'Lucia', included: 'No', role: 'Non-driver' },
+  { name: 'George', included: 'No', role: 'Non-driver' },
+  { name: 'Bonnie', included: 'No', role: 'Non-driver' },
+  { name: 'Roberta', included: 'No', role: 'Non-driver' },
+  { name: 'Holly', included: 'No', role: 'Non-driver' },
+];
+
+/**
+ * Adds anyone missing from the Members tab. Existing rows are left exactly as
+ * they are, so Robin's edits — and Roberta's status once she confirms — survive
+ * a re-run.
+ */
+function setupMemberRoster_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.members);
+  var settings = ss.getSheetByName(SHEETS.settings);
+  var start = settings.getRange('B4').getValue();
+  var end = settings.getRange('B5').getValue();
+
+  var existing = {};
+  sheet.getRange(FIRST_DATA_ROW, MEMBER.name, MEMBER_ROWS, 1).getValues().forEach(function (r) {
+    var n = String(r[0]).trim();
+    if (n) existing[n.toLowerCase()] = true;
+  });
+
+  var added = [];
+  ROSTER.forEach(function (p) {
+    if (existing[p.name.toLowerCase()]) return;
+    var row = firstEmptyRow_(sheet, MEMBER.name);
+    if (row > FIRST_DATA_ROW + MEMBER_ROWS - 1) {
+      Logger.log('WARNING: no room left on Members for ' + p.name);
+      return;
+    }
+    sheet.getRange(row, MEMBER.name).setValue(p.name);
+    sheet.getRange(row, MEMBER.include).setValue(p.included);
+    sheet.getRange(row, MEMBER.join).setValue(start);
+    sheet.getRange(row, MEMBER.leave).setValue(end);
+    sheet.getRange(row, MEMBER.role).setValue(p.role);
+    existing[p.name.toLowerCase()] = true;
+    added.push(p.name);
+  });
+
+  Logger.log(added.length ? 'Added to Members: ' + added.join(', ') : 'Members already complete.');
 }
 
 /**

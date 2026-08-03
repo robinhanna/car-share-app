@@ -47,7 +47,7 @@ export function Reserve({ me, onDone }: Props) {
 
   return (
     <>
-      <p class="eyebrow">Booking</p>
+      <p class="kicker">Booking</p>
       <h1>Reserve the car</h1>
       <div class="spacer" />
 

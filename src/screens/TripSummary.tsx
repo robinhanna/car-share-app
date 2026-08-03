@@ -13,7 +13,7 @@ export function TripSummary({ cost, destination, onDone }: Props) {
 
   return (
     <div class="center">
-      <p class="eyebrow">{destination || 'Trip logged'}</p>
+      <p class="kicker">{destination || 'Trip logged'}</p>
       <h1>Saved</h1>
 
       <div class="card card--status">

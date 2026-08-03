@@ -30,7 +30,14 @@ export interface Member {
   tripCosts: number;
 }
 
-export type PaymentType = 'cash' | 'fuel' | 'tolls' | 'parking' | 'prepayment';
+export type PaymentType =
+  | 'cash'
+  | 'fuel'
+  | 'tolls'
+  | 'parking'
+  | 'prepayment'
+  /** One side of a transfer between two people — negative on the receiver's row. */
+  | 'settlement';
 
 export interface Payment {
   date: string;
@@ -122,6 +129,7 @@ export type OpName =
   | 'cancelReservation'
   | 'logKarma'
   | 'logPayment'
+  | 'settleUp'
   | 'resetTestData';
 
 export interface CompleteTripPayload {
@@ -163,6 +171,14 @@ export interface LogKarmaPayload {
   amount?: number;
 }
 
+export interface SettleUpPayload {
+  date: string;
+  from: string;
+  to: string;
+  amount: number;
+  note: string;
+}
+
 export interface LogPaymentPayload {
   date: string;
   name: string;
@@ -182,6 +198,7 @@ export type OpPayload =
   | CancelReservationPayload
   | LogKarmaPayload
   | LogPaymentPayload
+  | SettleUpPayload
   | ResetPayload;
 
 export interface Op {

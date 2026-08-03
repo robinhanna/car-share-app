@@ -6,6 +6,7 @@ import type {
   Payment,
   PostResponse,
   Role,
+  SettleUpPayload,
 } from './types';
 
 /**
@@ -36,7 +37,11 @@ let bootstrap: Bootstrap = {
     member('Julia', true, 31, 5),
     member('Jonas', true, 31, 1),
     member('John', true, 31, 0),
-    member('Roberta', false, 31, 2, 'Non-driver', 2),
+    member('Lucia', false, 31, 0, 'Non-driver', 3),
+    member('George', false, 31, 1, 'Non-driver', 2),
+    member('Bonnie', false, 31, 0, 'Non-driver', 0),
+    member('Roberta', false, 31, 2, 'Non-driver', 0),
+    member('Holly', false, 31, 0, 'Non-driver', 1),
   ],
   spots: [
     spot('Near base (Burgau-Lagos)', 'Praia do Burgau', 3, 5),
@@ -139,6 +144,31 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
 
     if (op.op === 'logPayment') {
       bootstrap = { ...bootstrap, payments: [...bootstrap.payments, op.payload as Payment] };
+    }
+
+    // Mirrors settleUp_: two rows, so both ledgers move together.
+    if (op.op === 'settleUp') {
+      const s = op.payload as SettleUpPayload;
+      bootstrap = {
+        ...bootstrap,
+        payments: [
+          ...bootstrap.payments,
+          {
+            date: s.date,
+            name: s.from,
+            type: 'settlement',
+            amount: s.amount,
+            note: `Settled with ${s.to}`,
+          },
+          {
+            date: s.date,
+            name: s.to,
+            type: 'settlement',
+            amount: -s.amount,
+            note: `Received from ${s.from}`,
+          },
+        ],
+      };
     }
 
     // The real backend credits pump spending from logKarma; mirror it so the

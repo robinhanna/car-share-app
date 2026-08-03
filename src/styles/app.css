@@ -257,6 +257,7 @@ h1 + .spacer + .card {
 .amount {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .amount--owed {
@@ -283,6 +284,45 @@ h1 + .spacer + .card {
 
 .spacer {
   height: 18px;
+}
+
+/*
+ * The mono eyebrow reads well as a small card label but badly as a heading —
+ * 12px uppercase with wide tracking is slow to read on a phone in the sun. So
+ * headings get their own class in the display serif, and .eyebrow is left alone
+ * for the two places it earns its keep.
+ */
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: 24px 0 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sand);
+}
+
+.section-title .total {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The line above an h1. Bigger than .eyebrow, still mono, still coral. */
+.kicker {
+  font-family: var(--font-label);
+  font-size: 13px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--coral-dark);
+  margin: 0 0 8px;
 }
 
 .card-head {
@@ -322,6 +362,77 @@ h1 + .spacer + .card {
 .chip--add {
   border-style: dashed;
   color: var(--ink-soft);
+}
+
+/*
+ * Role colour, used everywhere a person's name is selectable: coral means
+ * paying into the rental, teal means paying per day ridden. Unselected shows
+ * the colour as a dot; selected fills with it. Ink on top either way — neither
+ * colour passes contrast as text on paper.
+ */
+.chip[data-role='driver'][aria-pressed='true'] {
+  background: var(--coral);
+  border-color: var(--coral);
+  font-weight: 600;
+}
+
+.chip[data-role='rider'][aria-pressed='true'] {
+  background: var(--teal);
+  border-color: var(--teal);
+  font-weight: 600;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 1px;
+  background: var(--coral);
+}
+
+.dot--rider {
+  background: var(--teal);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* The name picker: role shown as a coloured edge rather than a badge. */
+.name-btn {
+  justify-content: flex-start;
+  gap: 12px;
+  border-left: 5px solid var(--coral);
+  text-align: left;
+}
+
+.name-btn--rider {
+  border-left-color: var(--teal);
+}
+
+.name-btn .role {
+  margin-left: auto;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.summary-total--owed {
+  color: var(--rust);
+}
+
+.summary-total--clear {
+  color: var(--teal-dark);
 }
 
 /* A whole list row that behaves like a button, without looking like one. */

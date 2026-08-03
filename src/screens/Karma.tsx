@@ -48,7 +48,7 @@ export function Karma({ me }: Props) {
 
   return (
     <>
-      <p class="eyebrow">Karma · {myKarma} points</p>
+      <p class="kicker">Karma · {myKarma} points</p>
       <h1>What did you do?</h1>
       <p class="muted">
         Karma never changes what anyone pays. It only breaks ties when two people want the car.
@@ -59,7 +59,7 @@ export function Karma({ me }: Props) {
 
       {spending ? (
         <div class="card">
-          <p class="eyebrow">{spending.action}</p>
+          <p class="kicker">{spending.action}</p>
           <label class="field">
             <span>How much did you spend?</span>
             <input
@@ -109,7 +109,7 @@ export function Karma({ me }: Props) {
       )}
 
       <div class="spacer" />
-      <p class="eyebrow">Everyone</p>
+      <p class="section-title">Everyone</p>
       <ul class="list">
         {[...(bootstrap?.members ?? [])]
           .sort((a, b) => b.karma - a.karma)

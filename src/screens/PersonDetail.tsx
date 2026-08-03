@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import type { Payment } from '../api/types';
 import { ADMIN_MEMBER } from '../config';
 import {
   dayRate,
@@ -54,13 +55,17 @@ export function PersonDetail({ name, me }: Props) {
 
       <div class="card card--status center">
         <p class="muted">{owes ? 'Owes' : 'Is owed'}</p>
-        <p class="summary-total">{euro(Math.abs(ledger.balance))}</p>
+        <p class={`summary-total ${owes ? 'summary-total--owed' : 'summary-total--clear'}`}>
+          {euro(Math.abs(ledger.balance))}
+        </p>
         <p class="muted">
           {euro(ledger.carCharge + ledger.tripCosts)} charged · {euro(ledger.paid)} paid
         </p>
       </div>
 
-      <p class="eyebrow">The car</p>
+      <p class="section-title">
+        The car <span class="total">{euro(ledger.carCharge)}</span>
+      </p>
       <ul class="list">
         <li>
           <span>
@@ -71,8 +76,9 @@ export function PersonDetail({ name, me }: Props) {
         </li>
       </ul>
 
-      <div class="spacer" />
-      <p class="eyebrow">Trips · {euro(ledger.tripCosts)}</p>
+      <p class="section-title">
+        Trips <span class="total">{euro(ledger.tripCosts)}</span>
+      </p>
       {trips.length === 0 ? (
         <p class="muted">No trips yet.</p>
       ) : (
@@ -94,8 +100,9 @@ export function PersonDetail({ name, me }: Props) {
         </ul>
       )}
 
-      <div class="spacer" />
-      <p class="eyebrow">Payments · {euro(ledger.paid)}</p>
+      <p class="section-title">
+        Payments <span class="total amount--clear">−{euro(ledger.paid)}</span>
+      </p>
       {payments.length === 0 ? (
         <p class="muted">Nothing paid yet.</p>
       ) : (
@@ -103,19 +110,25 @@ export function PersonDetail({ name, me }: Props) {
           {payments.map((p, i) => (
             <li key={`${p.date}-${i}`}>
               <span>
-                <strong>{paymentLabel(p.type)}</strong>
+                <strong>{paymentLabel(p, name)}</strong>
                 {p.note && p.type !== 'prepayment' ? ` · ${p.note}` : ''}
                 <br />
                 <span class="muted">{shortDate(p.date)}</span>
               </span>
-              <span class="amount amount--clear">−{euro(p.amount)}</span>
+              {/* A negative row is the receiving side of a transfer: it reduces
+                  what this person is owed, so it reads as a charge, not a credit. */}
+              <span class={`amount ${p.amount < 0 ? 'amount--owed' : 'amount--clear'}`}>
+                {p.amount < 0 ? '+' : '−'}
+                {euro(Math.abs(p.amount))}
+              </span>
             </li>
           ))}
         </ul>
       )}
 
-      <div class="spacer" />
-      <p class="eyebrow">Karma · {karma.reduce((s, k) => s + k.points, 0)} points</p>
+      <p class="section-title">
+        Karma <span class="total">{karma.reduce((s, k) => s + k.points, 0)} pts</span>
+      </p>
       {karma.length === 0 ? (
         <p class="muted">No karma logged.</p>
       ) : (
@@ -133,7 +146,7 @@ export function PersonDetail({ name, me }: Props) {
         </ul>
       )}
 
-      {me === ADMIN_MEMBER && name !== me && <RecordPayment name={name} />}
+      <SettleUp name={name} me={me} />
 
       <div class="spacer" />
       <p class="muted">
@@ -145,41 +158,78 @@ export function PersonDetail({ name, me }: Props) {
 }
 
 /**
- * Robin recording that someone handed him cash. Admin-only, because it is the
- * one entry nobody can make on their own behalf without it being an assertion
- * about someone else's money.
+ * Recording money changing hands. Anyone can record their own — "I gave Robin
+ * €50" — and Robin can record one on anybody's page, in either direction, since
+ * he may be repaying someone who fronted a lot of fuel.
+ *
+ * Both sides are written by the backend, so the payer's debt and the receiver's
+ * credit always move together.
  */
-function RecordPayment({ name }: { name: string }) {
+function SettleUp({ name, me }: { name: string; me: string }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(localDateInput(new Date()));
   const [note, setNote] = useState('');
+  const [theyPaid, setTheyPaid] = useState(true);
+  const [done, setDone] = useState<string | null>(null);
 
   const value = Number(amount);
+  const ownPage = name === me;
+  const counterparty = ownPage ? ADMIN_MEMBER : me;
+
+  // On your own page you are always the one paying. On someone else's, you
+  // choose which way the money went.
+  const from = ownPage ? me : theyPaid ? name : me;
+  const to = ownPage ? ADMIN_MEMBER : theyPaid ? me : name;
 
   const save = async () => {
-    await queueOp('logPayment', {
+    await queueOp('settleUp', {
       date: new Date(date).toISOString(),
-      name,
-      type: 'cash',
+      from,
+      to,
       amount: value,
       note,
     });
+    setDone(`${from} → ${to}`);
     setOpen(false);
     setAmount('');
     setNote('');
+    setTimeout(() => setDone(null), 3000);
   };
+
+  // Your own page: record what you paid Robin. Robin's pages: record either
+  // direction with anyone. Everything else — Julia looking at Jonas — has no
+  // business writing an entry, so there's no button.
+  const allowed = ownPage ? me !== ADMIN_MEMBER : me === ADMIN_MEMBER;
+  if (!allowed) return null;
 
   return (
     <>
       <div class="spacer" />
+      {done && <div class="banner banner--synced">Settled: {done} ✓</div>}
+
       {!open ? (
         <button class="btn btn--secondary" onClick={() => setOpen(true)}>
-          {name} paid me cash
+          Settle up{ownPage ? ` with ${counterparty}` : ''}
         </button>
       ) : (
         <div class="card">
-          <p class="eyebrow">Cash from {name}</p>
+          <p class="kicker">Settle up</p>
+
+          {!ownPage && (
+            <div class="field">
+              <span>Which way?</span>
+              <div class="segmented">
+                <button aria-pressed={theyPaid} onClick={() => setTheyPaid(true)}>
+                  {name} paid me
+                </button>
+                <button aria-pressed={!theyPaid} onClick={() => setTheyPaid(false)}>
+                  I paid {name}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div class="row">
             <label class="field">
               <span>Amount (€)</span>
@@ -200,6 +250,7 @@ function RecordPayment({ name }: { name: string }) {
               />
             </label>
           </div>
+
           <label class="field">
             <span>Note</span>
             <input
@@ -209,6 +260,11 @@ function RecordPayment({ name }: { name: string }) {
               onInput={(e) => setNote((e.target as HTMLInputElement).value)}
             />
           </label>
+
+          <p class="muted">
+            Comes off what {from} owes and off what {to} is owed.
+          </p>
+
           <div class="row">
             <button class="btn btn--secondary" onClick={() => setOpen(false)}>
               Cancel
@@ -223,8 +279,8 @@ function RecordPayment({ name }: { name: string }) {
   );
 }
 
-function paymentLabel(type: string): string {
-  switch (type) {
+function paymentLabel(p: Payment, _person: string): string {
+  switch (p.type) {
     case 'fuel':
       return 'Fuel bought';
     case 'tolls':
@@ -233,6 +289,8 @@ function paymentLabel(type: string): string {
       return 'Parking paid';
     case 'prepayment':
       return 'Rental paid upfront';
+    case 'settlement':
+      return p.amount < 0 ? 'Money received' : 'Money handed over';
     default:
       return 'Cash';
   }

@@ -93,7 +93,7 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
 
   return (
     <>
-      <p class="eyebrow">Trip</p>
+      <p class="kicker">Trip</p>
       <h1>Log a trip</h1>
       <div class="spacer" />
 
@@ -215,7 +215,7 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
 
       {cost && distanceKm > 0 && (
         <div class="card">
-          <p class="eyebrow">Running total</p>
+          <p class="kicker">Running total</p>
           <p class="muted">
             {km(distanceKm)} · {euro(cost.total)} total · {cost.people}{' '}
             {cost.people === 1 ? 'person' : 'people'}
