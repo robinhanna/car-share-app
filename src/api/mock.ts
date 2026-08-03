@@ -1,4 +1,12 @@
-import type { Bootstrap, Member, Op, PostResponse, Role } from './types';
+import type {
+  Bootstrap,
+  LogKarmaPayload,
+  Member,
+  Op,
+  Payment,
+  PostResponse,
+  Role,
+} from './types';
 
 /**
  * Dev-only stand-in for the Sheet, so the app can be worked on before the
@@ -127,6 +135,25 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
         ...bootstrap,
         reservations: bootstrap.reservations.filter((r) => r.id !== id),
       };
+    }
+
+    if (op.op === 'logPayment') {
+      bootstrap = { ...bootstrap, payments: [...bootstrap.payments, op.payload as Payment] };
+    }
+
+    // The real backend credits pump spending from logKarma; mirror it so the
+    // dev ledger tells the truth.
+    if (op.op === 'logKarma') {
+      const k = op.payload as LogKarmaPayload;
+      if (k.amount && k.amount > 0) {
+        bootstrap = {
+          ...bootstrap,
+          payments: [
+            ...bootstrap.payments,
+            { date: k.date, name: k.name, type: 'fuel', amount: k.amount, note: k.action },
+          ],
+        };
+      }
     }
   });
   return {

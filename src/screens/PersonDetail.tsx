@@ -1,3 +1,5 @@
+import { useState } from 'preact/hooks';
+import { ADMIN_MEMBER } from '../config';
 import {
   dayRate,
   euro,
@@ -6,11 +8,12 @@ import {
   personPayments,
   personTrips,
 } from '../lib/cost';
-import { shortDate } from '../lib/dates';
-import { useApp } from '../state/store';
+import { localDateInput, shortDate } from '../lib/dates';
+import { queueOp, useApp } from '../state/store';
 
 interface Props {
   name: string;
+  me: string;
 }
 
 /**
@@ -18,7 +21,7 @@ interface Props {
  * everything they've paid — each line dated, so a disagreement can be settled by
  * pointing at a row rather than re-deriving the month.
  */
-export function PersonDetail({ name }: Props) {
+export function PersonDetail({ name, me }: Props) {
   const { bootstrap } = useApp();
   const settings = bootstrap?.settings;
   const members = bootstrap?.members ?? [];
@@ -130,11 +133,92 @@ export function PersonDetail({ name }: Props) {
         </ul>
       )}
 
+      {me === ADMIN_MEMBER && name !== me && <RecordPayment name={name} />}
+
       <div class="spacer" />
       <p class="muted">
         Fuel is estimated from distance, never receipts — that's what decides who owes what. Money
         actually spent at the pump shows up above as a payment.
       </p>
+    </>
+  );
+}
+
+/**
+ * Robin recording that someone handed him cash. Admin-only, because it is the
+ * one entry nobody can make on their own behalf without it being an assertion
+ * about someone else's money.
+ */
+function RecordPayment({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(localDateInput(new Date()));
+  const [note, setNote] = useState('');
+
+  const value = Number(amount);
+
+  const save = async () => {
+    await queueOp('logPayment', {
+      date: new Date(date).toISOString(),
+      name,
+      type: 'cash',
+      amount: value,
+      note,
+    });
+    setOpen(false);
+    setAmount('');
+    setNote('');
+  };
+
+  return (
+    <>
+      <div class="spacer" />
+      {!open ? (
+        <button class="btn btn--secondary" onClick={() => setOpen(true)}>
+          {name} paid me cash
+        </button>
+      ) : (
+        <div class="card">
+          <p class="eyebrow">Cash from {name}</p>
+          <div class="row">
+            <label class="field">
+              <span>Amount (€)</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                autofocus
+                value={amount}
+                onInput={(e) => setAmount((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <label class="field">
+              <span>When</span>
+              <input
+                type="date"
+                value={date}
+                onInput={(e) => setDate((e.target as HTMLInputElement).value)}
+              />
+            </label>
+          </div>
+          <label class="field">
+            <span>Note</span>
+            <input
+              type="text"
+              value={note}
+              placeholder="optional"
+              onInput={(e) => setNote((e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <div class="row">
+            <button class="btn btn--secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+            <button class="btn" disabled={!(value > 0)} onClick={() => void save()}>
+              Record
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

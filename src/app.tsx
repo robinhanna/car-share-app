@@ -101,7 +101,7 @@ export function App() {
       )}
       {route.name === 'karma' && <Karma me={me} />}
       {route.name === 'balance' && <Balance me={me} onOpenPerson={(name) => setRoute({ name: 'person', person: name })} />}
-      {route.name === 'person' && <PersonDetail name={route.person} />}
+      {route.name === 'person' && <PersonDetail name={route.person} me={me} />}
     </main>
   );
 }
