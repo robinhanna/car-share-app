@@ -101,7 +101,7 @@ export function PersonDetail({ name, me }: Props) {
       )}
 
       <p class="section-title">
-        Payments <span class="total amount--clear">−{euro(ledger.paid)}</span>
+        Payments <span class="total total--credit">−{euro(ledger.paid)}</span>
       </p>
       {payments.length === 0 ? (
         <p class="muted">Nothing paid yet.</p>

@@ -109,7 +109,7 @@ function Group({
           against everyone's debt produces a number that means nothing. */}
       <p class="section-title">
         {title}
-        <span class="total amount--owed">
+        <span class="total">
           {euro(ledgers.reduce((s, l) => s + Math.max(l.balance, 0), 0))}
         </span>
       </p>

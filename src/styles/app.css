@@ -287,38 +287,44 @@ h1 + .spacer + .card {
 }
 
 /*
- * The mono eyebrow reads well as a small card label but badly as a heading —
- * 12px uppercase with wide tracking is slow to read on a phone in the sun. So
- * headings get their own class in the display serif, and .eyebrow is left alone
- * for the two places it earns its keep.
+ * Section headings are .eyebrow a third larger and bold — same Space Mono, same
+ * uppercase, same coral. The flex layout lets a total sit right-aligned on the
+ * same line.
  */
 .section-title {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 1.2;
-  color: var(--ink);
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--coral-dark);
   margin: 24px 0 4px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--sand);
 }
 
+/* Inherits the heading colour: these totals are money owed. */
 .section-title .total {
-  font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
-  font-size: 19px;
-  font-weight: 600;
   white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 
-/* The line above an h1. Bigger than .eyebrow, still mono, still coral. */
+/* Payments are the one section whose total is money in, not money owed. */
+.total--credit {
+  color: var(--teal-dark);
+}
+
+/* The line above an h1. Same treatment, one step down. */
 .kicker {
   font-family: var(--font-label);
-  font-size: 13px;
+  font-weight: 700;
+  font-size: 14px;
   letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--coral-dark);
