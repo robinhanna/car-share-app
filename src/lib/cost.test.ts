@@ -15,20 +15,21 @@ import {
   tripDistanceKm,
 } from './cost';
 
-// 6–31 August: €390 rental + €20 pickup, three members.
+// Paid period 7–31 August: €375 rental + €20 pickup, three members.
+// The group has the car from the 6th, but nobody pays the owner for that day.
 const settings: Settings = {
-  totalCost: 410,
-  rentalCost: 390,
+  totalCost: 395,
+  rentalCost: 375,
   extras: 20,
-  monthStart: '2026-08-06',
+  monthStart: '2026-08-07',
   monthEnd: '2026-08-31',
-  totalMemberDays: 78,
-  dailyRate: 410 / 78,
+  totalMemberDays: 75,
+  dailyRate: 395 / 75,
   fuelPrice: 2.03,
   consumption: 7.5,
   costPerKm: costPerKm(2.03, 7.5),
   riderDays: 0,
-  dayRate: 410 / 78,
+  dayRate: 395 / 75,
 };
 
 const zavial: Spot = {
@@ -43,9 +44,9 @@ const zavial: Spot = {
 const member = (over: Partial<Member> = {}): Member => ({
   name: 'Robin',
   included: true,
-  joinDate: '2026-08-06',
+  joinDate: '2026-08-07',
   leaveDate: '2026-08-31',
-  daysActive: 26,
+  daysActive: 25,
   carCharge: 0,
   paid: 0,
   balance: 0,
@@ -58,7 +59,7 @@ const member = (over: Partial<Member> = {}): Member => ({
 
 const trip = (over: Partial<Trip> = {}): Trip => ({
   id: 't1',
-  date: '2026-08-05',
+  date: '2026-08-10',
   driver: 'Robin',
   destination: 'Zavial',
   distanceKm: 28,
@@ -127,11 +128,11 @@ describe('trip split', () => {
 describe('day rate', () => {
   const members = ['Robin', 'Julia', 'Jonas'].map((name) => member({ name }));
 
-  it('splits €410 three ways over 26 days when nobody else rides', () => {
-    expect(totalMemberDays(members)).toBe(78);
+  it('splits €395 three ways over 25 days when nobody else rides', () => {
+    expect(totalMemberDays(members)).toBe(75);
     const rate = dayRate(members, settings);
-    expect(rate).toBeCloseTo(5.2564, 4); // 410 / 78
-    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(136.67, 2));
+    expect(rate).toBeCloseTo(5.2667, 4); // 395 / 75
+    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(131.67, 2));
   });
 
   it('includes the pickup cost in the pot', () => {
@@ -146,13 +147,13 @@ describe('day rate', () => {
     expect(totalRiderDays(people)).toBe(1.5);
 
     const rate = dayRate(people, settings);
-    expect(rate).toBeCloseTo(5.1572, 4); // 410 / 79.5
+    expect(rate).toBeCloseTo(5.1634, 4); // 395 / 76.5
 
-    expect(personCarCharge(people[3], rate)).toBeCloseTo(7.74, 2);
-    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(134.09, 2));
+    expect(personCarCharge(people[3], rate)).toBeCloseTo(7.75, 2);
+    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(129.08, 2));
   });
 
-  it('still collects exactly €410 in total', () => {
+  it('still collects exactly €395 in total', () => {
     const people = [
       ...members,
       member({ name: 'Lucia', included: false, role: 'Non-driver', rideDays: 1.5 }),
@@ -160,7 +161,7 @@ describe('day rate', () => {
     ];
     const rate = dayRate(people, settings);
     const collected = people.reduce((sum, m) => sum + personCarCharge(m, rate), 0);
-    expect(collected).toBeCloseTo(410, 6);
+    expect(collected).toBeCloseTo(395, 6);
   });
 
   it('charges every member the identical rate per day — the reason this model was chosen', () => {
@@ -210,6 +211,33 @@ describe('half days', () => {
 
   it('gives the taxi driver no day at all', () => {
     expect(personRideDays('Julia', [taxi()])).toBe(0);
+  });
+});
+
+describe('the free day before the rental starts', () => {
+  // The group has the car on the 6th; the owner is only paid from the 7th.
+  const sixth = trip({ date: '2026-08-06', driver: 'Julia', riders: ['Lucia'], people: 2, perPerson: 2.13 });
+  const seventh = trip({ date: '2026-08-07', driver: 'Julia', riders: ['Lucia'], people: 2, perPerson: 2.13 });
+
+  it('charges no day for a trip before the period starts', () => {
+    expect(personRideDays('Lucia', [sixth], settings)).toBe(0);
+  });
+
+  it('still charges the fuel for that trip', () => {
+    expect(personTripCosts('Lucia', [sixth])).toBeCloseTo(2.13, 2);
+  });
+
+  it('charges a day for the same trip one day later', () => {
+    expect(personRideDays('Lucia', [seventh], settings)).toBe(1);
+  });
+
+  it('charges no day after the period ends either', () => {
+    const september = trip({ date: '2026-09-01', driver: 'Julia', riders: ['Lucia'] });
+    expect(personRideDays('Lucia', [september], settings)).toBe(0);
+  });
+
+  it('counts every day when no period is given', () => {
+    expect(personRideDays('Lucia', [sixth, seventh])).toBe(2);
   });
 });
 
@@ -299,13 +327,13 @@ describe('person ledger', () => {
       member({ name: 'Jonas' }),
     ];
     const payments: Payment[] = [
-      { date: '2026-08-06', name: 'Robin', type: 'prepayment', amount: 410, note: '' },
+      { date: '2026-08-06', name: 'Robin', type: 'prepayment', amount: 395, note: '' },
     ];
     const rate = dayRate(people, settings);
     const ledgers = people.map((m) => personLedger(m, [], payments, rate));
 
-    // He fronted €410 and owes €136.67 of it himself.
-    expect(ledgers[0].balance).toBeCloseTo(-273.33, 2);
+    // He fronted €395 and owes €131.67 of it himself.
+    expect(ledgers[0].balance).toBeCloseTo(-263.33, 2);
     const owedByOthers = ledgers.slice(1).reduce((sum, l) => sum + l.balance, 0);
     expect(owedByOthers).toBeCloseTo(-ledgers[0].balance, 6);
   });

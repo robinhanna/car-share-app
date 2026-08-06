@@ -230,15 +230,19 @@ function setupSettings_(ss) {
  * the Sheet is the source of truth again and Robin can edit any of it without
  * a later setupSheet() run stamping over him.
  */
-var CONFIG_VERSION = 2;
+var CONFIG_VERSION = 3;
 
 function migrateConfig_(ss) {
   var props = PropertiesService.getScriptProperties();
   if (Number(props.getProperty('configVersion') || 0) >= CONFIG_VERSION) return;
 
   var s = ss.getSheetByName(SHEETS.settings);
-  s.getRange('B3').setValue(390);                       // 26 days at €15
-  s.getRange('B4').setValue(new Date(2026, 7, 6));      // 6 August
+  // The owner doesn't charge for the pickup day, so the paid period starts on
+  // the 7th. The group has the car on the 6th and will use it — trips that day
+  // cost fuel but no day rate, which rebuildRideDays_ handles by only counting
+  // ride-days inside B4..B5.
+  s.getRange('B3').setValue(375);                       // 25 days at €15
+  s.getRange('B4').setValue(new Date(2026, 7, 7));      // 7 August
   s.getRange('B5').setValue(new Date(2026, 7, 31));     // 31 August
   s.getRange('B14').setValue(20);                       // Uber to collect the car
 
@@ -257,8 +261,39 @@ function migrateConfig_(ss) {
     }
   }
 
+  // The prepayment row was seeded by this script from an older total, so it
+  // tracks the total. A row Robin typed himself is a different matter and is
+  // left alone — setupPayments_ only flags those.
+  correctSeededPrepayment_(ss);
+
   props.setProperty('configVersion', String(CONFIG_VERSION));
-  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 6-31 Aug, €390 + €20 pickup.');
+  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 7-31 Aug, €375 + €20 pickup = €395.');
+}
+
+function correctSeededPrepayment_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.payments);
+  if (!sheet) return;
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return;
+
+  var total = num_(ss.getSheetByName(SHEETS.settings).getRange('B15').getValue());
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, last - 2, 6).getValues();
+
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][PAY.clientId - 1]) !== 'seed-prepayment') continue;
+    var row = FIRST_DATA_ROW + i;
+    var was = num_(rows[i][PAY.amount - 1]);
+    if (Math.abs(was - total) < 0.005) return;
+
+    sheet.getRange(row, PAY.amount).setValue(total);
+    sheet.getRange(row, PAY.date).setValue(
+      ss.getSheetByName(SHEETS.settings).getRange('B4').getValue(),
+    );
+    sheet.getRange(row, PAY.note).setValue('Rental and pickup paid upfront');
+    Logger.log('Prepayment corrected: €' + was.toFixed(2) + ' → €' + total.toFixed(2) +
+      ' (Payments row ' + row + ').');
+    return;
+  }
 }
 
 function setupRideRequests_(ss) {

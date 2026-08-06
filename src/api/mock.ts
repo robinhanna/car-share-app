@@ -25,28 +25,28 @@ const consumption = 7.5;
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
   settings: {
-    totalCost: 410,
-    rentalCost: 390,
+    totalCost: 395,
+    rentalCost: 375,
     extras: 20,
-    monthStart: '2026-08-06T00:00:00.000Z',
+    monthStart: '2026-08-07T00:00:00.000Z',
     monthEnd: '2026-08-31T00:00:00.000Z',
-    totalMemberDays: 78,
-    dailyRate: 410 / 78,
+    totalMemberDays: 75,
+    dailyRate: 395 / 75,
     fuelPrice,
     consumption,
     costPerKm: (fuelPrice * consumption) / 100,
     riderDays: 1.5,
-    dayRate: 410 / 79.5,
+    dayRate: 395 / 76.5,
   },
   members: [
-    member('Robin', true, 26, 3),
-    member('Julia', true, 26, 5),
-    member('Jonas', true, 26, 1),
-    member('John', false, 26, 0, 'Non-driver', 1),
-    member('Lucia', false, 26, 0, 'Non-driver', 0.5),
-    member('George', false, 26, 1, 'Non-driver', 0),
-    member('Bonnie', false, 26, 0, 'Non-driver', 0),
-    member('Holly', false, 26, 0, 'Non-driver', 0),
+    member('Robin', true, 25, 3),
+    member('Julia', true, 25, 5),
+    member('Jonas', true, 25, 1),
+    member('John', false, 25, 0, 'Non-driver', 1),
+    member('Lucia', false, 25, 0, 'Non-driver', 0.5),
+    member('George', false, 25, 1, 'Non-driver', 0),
+    member('Bonnie', false, 25, 0, 'Non-driver', 0),
+    member('Holly', false, 25, 0, 'Non-driver', 0),
   ],
   spots: [
     spot('Near base (Burgau-Lagos)', 'Praia do Burgau', 3, 5),
@@ -77,10 +77,10 @@ let bootstrap: Bootstrap = {
   karmaLog: [{ date: '2026-08-03', name: 'Julia', action: 'Cleaned the car', points: 1 }],
   payments: [
     {
-      date: '2026-08-01',
+      date: '2026-08-07',
       name: 'Robin',
       type: 'prepayment',
-      amount: 410,
+      amount: 395,
       note: 'Rental and pickup paid upfront',
     },
   ],
@@ -124,7 +124,7 @@ function member(
   role: Role = 'Driver',
   rideDays = 0,
 ): Member {
-  const rate = 410 / 79.5;
+  const rate = 395 / 76.5;
   const carCharge = (included ? daysActive : rideDays) * rate;
   return {
     name,

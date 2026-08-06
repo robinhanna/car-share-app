@@ -146,12 +146,27 @@ export function dayCharge(tripsThatDay: Trip[]): number {
   return 1;
 }
 
-/** Their ride-days across the month, half days included. */
-export function personRideDays(name: string, trips: Trip[]): number {
+/**
+ * Their ride-days, half days included.
+ *
+ * Only days inside the paid rental period count. The group has the car on the
+ * 6th but nobody is paying the owner for it, so a trip that day costs fuel and
+ * no day rate. Mirrors the period check in rebuildRideDays_.
+ */
+export function personRideDays(
+  name: string,
+  trips: Trip[],
+  period?: { monthStart: string; monthEnd: string },
+): number {
+  const start = period?.monthStart.slice(0, 10);
+  const end = period?.monthEnd.slice(0, 10);
+
   const byDay = new Map<string, Trip[]>();
   personTrips(name, trips).forEach((t) => {
     const day = (t.date || '').slice(0, 10);
     if (!day) return;
+    if (start && day < start) return;
+    if (end && day > end) return;
     byDay.set(day, [...(byDay.get(day) ?? []), t]);
   });
   return [...byDay.values()].reduce((sum, dayTrips) => sum + dayCharge(dayTrips), 0);

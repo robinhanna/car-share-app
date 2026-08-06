@@ -752,6 +752,12 @@ function rebuildRideDays_(ss) {
     if (p) p.member = m;
   });
 
+  // The paid rental period. Days outside it — the group had the car on the 6th
+  // but nobody is paying the owner for it — cost fuel but no day rate.
+  var settingsSheet = ss.getSheetByName(SHEETS.settings);
+  var periodStart = dateKey_(settingsSheet.getRange('B4').getValue());
+  var periodEnd = dateKey_(settingsSheet.getRange('B5').getValue());
+
   // Walk the trips, attributing each one to everyone who was in the car.
   var trips = ss.getSheetByName(SHEETS.trips);
   var lastTrip = trips.getLastRow();
@@ -772,10 +778,16 @@ function rebuildRideDays_(ss) {
       var perPerson = num_(r[TRIP.perPerson - 1]);
       var oneWay = String(r[TRIP.tripType - 1]).trim().toLowerCase() === 'one-way';
 
+      var chargeable = dayKey &&
+        (!periodStart || dayKey >= periodStart) &&
+        (!periodEnd || dayKey <= periodEnd);
+
       occupants.forEach(function (name) {
         var p = person(name);
         if (!p) return;
-        if (dayKey) {
+        // Fuel is owed whenever it was burnt; the day rate only inside the
+        // period the group is actually paying for.
+        if (chargeable) {
           if (!p.days[dayKey]) p.days[dayKey] = [];
           p.days[dayKey].push({ taxi: isTaxi, oneWay: oneWay });
         }
