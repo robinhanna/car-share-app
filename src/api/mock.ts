@@ -1,5 +1,6 @@
 import type {
   Bootstrap,
+  CompleteTripPayload,
   LogKarmaPayload,
   Member,
   Op,
@@ -7,6 +8,9 @@ import type {
   PostResponse,
   Role,
   SettleUpPayload,
+  RequestRidePayload,
+  ClaimRidePayload,
+  CancelRidePayload,
 } from './types';
 
 /**
@@ -21,27 +25,28 @@ const consumption = 7.5;
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
   settings: {
-    totalCost: 465,
-    monthStart: '2026-08-01T00:00:00.000Z',
+    totalCost: 410,
+    rentalCost: 390,
+    extras: 20,
+    monthStart: '2026-08-06T00:00:00.000Z',
     monthEnd: '2026-08-31T00:00:00.000Z',
-    totalMemberDays: 124,
-    dailyRate: 465 / 124,
+    totalMemberDays: 78,
+    dailyRate: 410 / 78,
     fuelPrice,
     consumption,
     costPerKm: (fuelPrice * consumption) / 100,
-    riderDays: 2,
-    dayRate: 465 / 126,
+    riderDays: 1.5,
+    dayRate: 410 / 79.5,
   },
   members: [
-    member('Robin', true, 31, 3),
-    member('Julia', true, 31, 5),
-    member('Jonas', true, 31, 1),
-    member('John', true, 31, 0),
-    member('Lucia', false, 31, 0, 'Non-driver', 3),
-    member('George', false, 31, 1, 'Non-driver', 2),
-    member('Bonnie', false, 31, 0, 'Non-driver', 0),
-    member('Roberta', false, 31, 2, 'Non-driver', 0),
-    member('Holly', false, 31, 0, 'Non-driver', 1),
+    member('Robin', true, 26, 3),
+    member('Julia', true, 26, 5),
+    member('Jonas', true, 26, 1),
+    member('John', false, 26, 0, 'Non-driver', 1),
+    member('Lucia', false, 26, 0, 'Non-driver', 0.5),
+    member('George', false, 26, 1, 'Non-driver', 0),
+    member('Bonnie', false, 26, 0, 'Non-driver', 0),
+    member('Holly', false, 26, 0, 'Non-driver', 0),
   ],
   spots: [
     spot('Near base (Burgau-Lagos)', 'Praia do Burgau', 3, 5),
@@ -75,8 +80,23 @@ let bootstrap: Bootstrap = {
       date: '2026-08-01',
       name: 'Robin',
       type: 'prepayment',
-      amount: 465,
-      note: 'Full rental paid upfront',
+      amount: 410,
+      note: 'Rental and pickup paid upfront',
+    },
+  ],
+  rideRequests: [
+    {
+      id: 'ride-1',
+      created: new Date().toISOString(),
+      passenger: 'Lucia',
+      others: [],
+      when: new Date(Date.now() + 2 * 3600_000).toISOString(),
+      from: 'Quinta',
+      to: 'Lagos',
+      notes: 'Need to catch the bus',
+      status: 'open',
+      driver: '',
+      tripId: '',
     },
   ],
   reservations: [
@@ -104,7 +124,7 @@ function member(
   role: Role = 'Driver',
   rideDays = 0,
 ): Member {
-  const rate = 465 / 126;
+  const rate = 410 / 79.5;
   const carCharge = (included ? daysActive : rideDays) * rate;
   return {
     name,
@@ -168,6 +188,80 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             note: `Received from ${s.from}`,
           },
         ],
+      };
+    }
+
+    if (op.op === 'completeTrip') {
+      const t = op.payload as CompleteTripPayload;
+      const spot = bootstrap.spots.find((s) => s.name === t.destination);
+      const place = bootstrap.places.find((p) => p.name === t.destination);
+      const oneWayKm = spot?.oneWayKm ?? place?.oneWayKm ?? 0;
+      const distanceKm =
+        t.odoStart != null && t.odoEnd != null
+          ? Math.max(t.odoEnd - t.odoStart, 0)
+          : oneWayKm
+            ? oneWayKm * (t.tripType === 'One-way' ? 1 : 2)
+            : (t.manualKm ?? 0);
+
+      const fuel = distanceKm * bootstrap.settings.costPerKm;
+      const total = fuel + t.tolls + t.parking;
+      const isTaxi = t.taxi && t.riders.length > 0;
+      const people = isTaxi ? t.riders.length : 1 + t.riders.length;
+
+      bootstrap = {
+        ...bootstrap,
+        recentTrips: [
+          ...bootstrap.recentTrips,
+          {
+            id: op.clientId,
+            date: t.date,
+            driver: t.driver,
+            destination: t.destination,
+            distanceKm,
+            fuelCost: fuel,
+            tolls: t.tolls,
+            parking: t.parking,
+            total,
+            people,
+            perPerson: total / people,
+            riders: t.riders,
+            tripType: t.tripType,
+            activity: t.activity,
+            taxi: !!isTaxi,
+          },
+        ],
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === t.rideRequestId ? { ...r, status: 'done' as const } : r,
+        ),
+      };
+    }
+
+    if (op.op === 'requestRide') {
+      const r = op.payload as RequestRidePayload;
+      bootstrap = {
+        ...bootstrap,
+        rideRequests: [
+          ...bootstrap.rideRequests,
+          { ...r, created: new Date().toISOString(), status: 'open', driver: '', tripId: '' },
+        ],
+      };
+    }
+
+    if (op.op === 'claimRide') {
+      const { id, driver } = op.payload as ClaimRidePayload;
+      bootstrap = {
+        ...bootstrap,
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === id && r.status === 'open' ? { ...r, status: 'claimed', driver } : r,
+        ),
+      };
+    }
+
+    if (op.op === 'cancelRide') {
+      const { id } = op.payload as CancelRidePayload;
+      bootstrap = {
+        ...bootstrap,
+        rideRequests: bootstrap.rideRequests.filter((r) => r.id !== id),
       };
     }
 

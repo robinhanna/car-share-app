@@ -1,5 +1,9 @@
 export interface Settings {
+  /** Rental + extras — the pot everyone shares. */
   totalCost: number;
+  rentalCost: number;
+  /** Pickup / one-off costs, e.g. the Uber to collect the car. */
+  extras: number;
   monthStart: string;
   monthEnd: string;
   totalMemberDays: number;
@@ -105,6 +109,24 @@ export interface Trip {
   riders: string[];
   tripType: TripType;
   activity: string;
+  /** Driver was doing a favour: they pay nothing and are charged no day. */
+  taxi: boolean;
+}
+
+export type RideStatus = 'open' | 'claimed' | 'done' | 'cancelled';
+
+export interface RideRequest {
+  id: string;
+  created: string;
+  passenger: string;
+  others: string[];
+  when: string;
+  from: string;
+  to: string;
+  notes: string;
+  status: RideStatus;
+  driver: string;
+  tripId: string;
 }
 
 export type TripType = 'Round trip' | 'One-way';
@@ -119,6 +141,7 @@ export interface Bootstrap {
   karmaLog: KarmaEntry[];
   payments: Payment[];
   reservations: Reservation[];
+  rideRequests: RideRequest[];
   /** Every trip of the month — the per-person ledger needs the full set. */
   recentTrips: Trip[];
 }
@@ -130,6 +153,9 @@ export type OpName =
   | 'logKarma'
   | 'logPayment'
   | 'settleUp'
+  | 'requestRide'
+  | 'claimRide'
+  | 'cancelRide'
   | 'resetTestData';
 
 export interface CompleteTripPayload {
@@ -146,6 +172,27 @@ export interface CompleteTripPayload {
   notes: string;
   reservationId: string;
   activity: string;
+  taxi: boolean;
+  rideRequestId: string;
+}
+
+export interface RequestRidePayload {
+  id: string;
+  passenger: string;
+  others: string[];
+  when: string;
+  from: string;
+  to: string;
+  notes: string;
+}
+
+export interface ClaimRidePayload {
+  id: string;
+  driver: string;
+}
+
+export interface CancelRidePayload {
+  id: string;
 }
 
 export interface CreateReservationPayload {
@@ -199,6 +246,9 @@ export type OpPayload =
   | LogKarmaPayload
   | LogPaymentPayload
   | SettleUpPayload
+  | RequestRidePayload
+  | ClaimRidePayload
+  | CancelRidePayload
   | ResetPayload;
 
 export interface Op {

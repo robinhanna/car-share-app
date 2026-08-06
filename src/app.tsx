@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import type { RideRequest } from './api/types';
 import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
 import { sync, useApp } from './state/store';
@@ -9,12 +10,14 @@ import { LogTrip } from './screens/LogTrip';
 import { Me } from './screens/Me';
 import { PersonDetail } from './screens/PersonDetail';
 import { Reserve } from './screens/Reserve';
+import { Rides } from './screens/Rides';
 import { TripSummary } from './screens/TripSummary';
 
 export type Route =
   | { name: 'home' }
   | { name: 'reserve' }
-  | { name: 'log'; reservationId?: string }
+  | { name: 'log'; reservationId?: string; ride?: RideRequest }
+  | { name: 'rides' }
   | { name: 'summary'; cost: TripCost; destination: string }
   | { name: 'karma' }
   | { name: 'balance' }
@@ -85,10 +88,14 @@ export function App() {
 
       {route.name === 'home' && <Home me={me} onNavigate={setRoute} />}
       {route.name === 'reserve' && <Reserve me={me} onDone={() => setRoute({ name: 'home' })} />}
+      {route.name === 'rides' && (
+        <Rides me={me} onDrive={(ride) => setRoute({ name: 'log', ride })} />
+      )}
       {route.name === 'log' && (
         <LogTrip
           me={me}
           reservationId={route.reservationId}
+          ride={route.ride}
           onDone={(cost, destination) => setRoute({ name: 'summary', cost, destination })}
         />
       )}

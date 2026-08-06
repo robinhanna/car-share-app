@@ -14,13 +14,18 @@
 function setupSheet() {
   var ss = SpreadsheetApp.getActive();
 
+  // Settings first: the total to split is what seeds the prepayment row and
+  // drives every charge downstream.
+  setupSettings_(ss);
+  migrateConfig_(ss);
+
   setupReservations_(ss);
+  setupRideRequests_(ss);
   setupKarmaActions_(ss);
   setupKarmaLog_(ss);
   setupPlaces_(ss);
   setupPayments_(ss);
   setupRideDays_(ss);
-  setupSettings_(ss);
   migrateMembersTotals_(ss);
   setupMemberRoster_(ss);
   setupMembers_(ss);
@@ -158,13 +163,33 @@ function setupPayments_(ss) {
 
   // Robin fronted the whole rental — that is a payment, and without it his
   // balance would read as though he owed his own share.
+  var settings = ss.getSheetByName(SHEETS.settings);
+  var total = num_(settings.getRange('B15').getValue());
+
   if (!existing) {
-    var settings = ss.getSheetByName(SHEETS.settings);
-    var total = settings.getRange('B3').getValue();
-    var start = settings.getRange('B4').getValue();
     sheet.getRange(FIRST_DATA_ROW, 1, 1, 6).setValues([[
-      start, ADMIN_NAME, 'prepayment', total, 'Full rental paid upfront', 'seed-prepayment',
+      settings.getRange('B4').getValue(), ADMIN_NAME, 'prepayment', total,
+      'Rental and pickup paid upfront', 'seed-prepayment',
     ]]);
+    return;
+  }
+
+  // The seeded prepayment was written from an older total. Flag rather than
+  // overwrite: what Robin has actually laid out is a fact about the world, and
+  // only he knows it.
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return;
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, last - 2, 6).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][PAY.clientId - 1]) !== 'seed-prepayment') continue;
+    var seeded = num_(rows[i][PAY.amount - 1]);
+    if (Math.abs(seeded - total) > 0.005) {
+      Logger.log('NOTE: the prepayment row still reads €' + seeded.toFixed(2) +
+        ' but the total to split is now €' + total.toFixed(2) +
+        '. Update Payments row ' + (FIRST_DATA_ROW + i) +
+        ' to whatever you have actually paid out.');
+    }
+    break;
   }
 }
 
@@ -185,9 +210,74 @@ function setupSettings_(ss) {
   var s = ss.getSheetByName(SHEETS.settings);
   s.getRange('A12').setValue('Non-driver ride days (auto)');
   s.getRange('A13').setValue('Day rate (€/day, auto)');
-  s.getRange('B13').setFormula('=IFERROR(B3/(B6+B12);0)');
+  s.getRange('A14').setValue('Pickup / extras (€)');
+  s.getRange('A15').setValue('Total to split (auto)');
+
+  // The pickup cost gets its own line rather than being folded into the rental
+  // figure, so anyone looking at the sheet can see what they're paying for.
+  setFormulaVerified_(s.getRange('B15'), '=B3+B14');
+  setFormulaVerified_(s.getRange('B13'), '=IFERROR(B15/(B6+B12);0)');
+
   s.getRange('B13').setNumberFormat('€#,##0.0000');
+  s.getRange('B14:B15').setNumberFormat('€#,##0.00');
   if (String(s.getRange('B12').getValue()).trim() === '') s.getRange('B12').setValue(0);
+  if (String(s.getRange('B14').getValue()).trim() === '') s.getRange('B14').setValue(0);
+}
+
+/**
+ * Facts about this particular trip that changed after the sheet was first set
+ * up. Gated on a version marker so it happens exactly once: after this runs,
+ * the Sheet is the source of truth again and Robin can edit any of it without
+ * a later setupSheet() run stamping over him.
+ */
+var CONFIG_VERSION = 2;
+
+function migrateConfig_(ss) {
+  var props = PropertiesService.getScriptProperties();
+  if (Number(props.getProperty('configVersion') || 0) >= CONFIG_VERSION) return;
+
+  var s = ss.getSheetByName(SHEETS.settings);
+  s.getRange('B3').setValue(390);                       // 26 days at €15
+  s.getRange('B4').setValue(new Date(2026, 7, 6));      // 6 August
+  s.getRange('B5').setValue(new Date(2026, 7, 31));     // 31 August
+  s.getRange('B14').setValue(20);                       // Uber to collect the car
+
+  var members = ss.getSheetByName(SHEETS.members);
+  var rows = memberRows_();
+  for (var r = rows.first; r <= rows.last; r++) {
+    var name = String(members.getRange(r, MEMBER.name).getValue()).trim();
+    if (name === 'Roberta') {
+      members.getRange(r, 1, 1, MEMBER.tripCosts).clearContent();
+      Logger.log('Removed Roberta from Members.');
+    }
+    if (name === 'John') {
+      members.getRange(r, MEMBER.include).setValue('No');
+      members.getRange(r, MEMBER.role).setValue('Non-driver');
+      Logger.log('John is now a rider.');
+    }
+  }
+
+  props.setProperty('configVersion', String(CONFIG_VERSION));
+  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 6-31 Aug, €390 + €20 pickup.');
+}
+
+function setupRideRequests_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.rideRequests) || ss.insertSheet(SHEETS.rideRequests);
+
+  sheet.getRange('A1').setValue('Ride Requests — someone asking to be driven somewhere')
+    .setFontWeight('bold');
+  sheet.getRange(2, 1, 1, 12).setValues([[
+    'ID', 'Created', 'Passenger', 'Others', 'When', 'From', 'To', 'Notes',
+    'Status', 'Driver', 'Trip ID', 'Client ID',
+  ]]).setFontWeight('bold');
+  sheet.setFrozenRows(2);
+  sheet.getRange(FIRST_DATA_ROW, RIDE_REQ.when, 500, 1).setNumberFormat('yyyy-mm-dd hh:mm');
+
+  var status = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['open', 'claimed', 'done', 'cancelled'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(FIRST_DATA_ROW, RIDE_REQ.status, 500, 1).setDataValidation(status);
 }
 
 /**
@@ -203,11 +293,10 @@ var ROSTER = [
   { name: 'Robin', included: 'Yes', role: 'Driver' },
   { name: 'Julia', included: 'Yes', role: 'Driver' },
   { name: 'Jonas', included: 'Yes', role: 'Driver' },
-  { name: 'John', included: 'Yes', role: 'Driver' },
+  { name: 'John', included: 'No', role: 'Non-driver' },
   { name: 'Lucia', included: 'No', role: 'Non-driver' },
   { name: 'George', included: 'No', role: 'Non-driver' },
   { name: 'Bonnie', included: 'No', role: 'Non-driver' },
-  { name: 'Roberta', included: 'No', role: 'Non-driver' },
   { name: 'Holly', included: 'No', role: 'Non-driver' },
 ];
 
@@ -238,7 +327,11 @@ function migrateMembersTotals_(ss) {
   var rows = memberRows_();
 
   if (String(sheet.getRange(rows.total, 1).getValue()).trim().toUpperCase() === 'TOTAL') {
-    return; // already migrated
+    // Already moved, but the check still has to follow the total to split when
+    // that changes — as it just did, from the rental alone to rental + pickup.
+    setFormulaVerified_(sheet.getRange(rows.check, MEMBER.share),
+      '=ROUND(F' + rows.total + '-Settings!$B$15;2)');
+    return;
   }
 
   // Clear wherever the old pair currently sits inside the new block.
@@ -256,7 +349,7 @@ function migrateMembersTotals_(ss) {
 
   sheet.getRange(rows.check, 1).setValue('Check (should read 0.00)');
   setFormulaVerified_(sheet.getRange(rows.check, MEMBER.share),
-    '=ROUND(F' + rows.total + '-Settings!$B$3;2)');
+    '=ROUND(F' + rows.total + '-Settings!$B$15;2)');
   sheet.getRange(rows.check, MEMBER.share).setNumberFormat('0.00');
 
   Logger.log('Members: TOTAL moved to row ' + rows.total + ', capacity now ' + MEMBER_ROWS + '.');
@@ -384,6 +477,8 @@ function setupTripLog_(ss) {
     [TRIP.odoStart, 'Odo Start (km)'],
     [TRIP.odoEnd, 'Odo End (km)'],
     [TRIP.activity, 'Activity'],
+    [TRIP.taxi, 'Taxi run?'],
+    [TRIP.rideRequestId, 'Ride Request ID'],
   ];
   headers.forEach(function (h) {
     var cell = sheet.getRange(2, h[0]);

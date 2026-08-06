@@ -36,6 +36,7 @@ export function Home({ me, onNavigate }: Props) {
         )
       : null;
   const owed = myLedger ? myLedger.balance : 0;
+  const openRides = (bootstrap?.rideRequests ?? []).filter((r) => r.status === 'open').length;
 
   return (
     <>
@@ -81,6 +82,10 @@ export function Home({ me, onNavigate }: Props) {
         </button>
         <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'reserve' })}>
           Reserve the car
+        </button>
+        <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'rides' })}>
+          Lifts
+          {openRides > 0 && <span class="badge">{openRides}</span>}
         </button>
         <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'karma' })}>
           Karma

@@ -458,6 +458,26 @@ h1 + .spacer + .card {
   cursor: pointer;
 }
 
+.badge {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--coral);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A button sitting inside a list row rather than filling the width. */
+.btn--inline {
+  width: auto;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 15px;
+  flex: none;
+}
+
 .chev {
   color: var(--ink-soft);
   font-weight: 400;

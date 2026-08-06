@@ -8,24 +8,27 @@ import {
   personLedger,
   personTripCosts,
   personTrips,
+  personRideDays,
   totalMemberDays,
   totalRiderDays,
   tripCost,
   tripDistanceKm,
 } from './cost';
 
-// Values taken from output/car_rental_cost_split.xlsx — Settings B3, B9, B10, B11.
+// 6–31 August: €390 rental + €20 pickup, three members.
 const settings: Settings = {
-  totalCost: 465,
-  monthStart: '2026-08-01',
+  totalCost: 410,
+  rentalCost: 390,
+  extras: 20,
+  monthStart: '2026-08-06',
   monthEnd: '2026-08-31',
-  totalMemberDays: 124,
-  dailyRate: 465 / 124,
+  totalMemberDays: 78,
+  dailyRate: 410 / 78,
   fuelPrice: 2.03,
   consumption: 7.5,
   costPerKm: costPerKm(2.03, 7.5),
   riderDays: 0,
-  dayRate: 465 / 124,
+  dayRate: 410 / 78,
 };
 
 const zavial: Spot = {
@@ -40,9 +43,9 @@ const zavial: Spot = {
 const member = (over: Partial<Member> = {}): Member => ({
   name: 'Robin',
   included: true,
-  joinDate: '2026-08-01',
+  joinDate: '2026-08-06',
   leaveDate: '2026-08-31',
-  daysActive: 31,
+  daysActive: 26,
   carCharge: 0,
   paid: 0,
   balance: 0,
@@ -68,6 +71,7 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
   riders: [],
   tripType: 'Round trip',
   activity: '',
+  taxi: false,
   ...over,
 });
 
@@ -121,38 +125,49 @@ describe('trip split', () => {
 });
 
 describe('day rate', () => {
-  const drivers = ['Robin', 'Julia', 'Jonas', 'John'].map((name) => member({ name }));
+  const members = ['Robin', 'Julia', 'Jonas'].map((name) => member({ name }));
 
-  it('splits €465 four ways when nobody else rides', () => {
-    expect(totalMemberDays(drivers)).toBe(124);
-    expect(dayRate(drivers, settings)).toBeCloseTo(3.75, 4);
-    drivers.forEach((m) => expect(personCarCharge(m, 3.75)).toBeCloseTo(116.25, 2));
+  it('splits €410 three ways over 26 days when nobody else rides', () => {
+    expect(totalMemberDays(members)).toBe(78);
+    const rate = dayRate(members, settings);
+    expect(rate).toBeCloseTo(5.2564, 4); // 410 / 78
+    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(136.67, 2));
   });
 
-  it('widens the denominator when a non-driver rides', () => {
-    const people = [...drivers, member({ name: 'Ana', included: false, role: 'Non-driver', rideDays: 5 })];
-    expect(totalRiderDays(people)).toBe(5);
+  it('includes the pickup cost in the pot', () => {
+    expect(settings.rentalCost + settings.extras).toBe(settings.totalCost);
+  });
+
+  it('widens the denominator when a rider clocks up half days', () => {
+    const people = [
+      ...members,
+      member({ name: 'Lucia', included: false, role: 'Non-driver', rideDays: 1.5 }),
+    ];
+    expect(totalRiderDays(people)).toBe(1.5);
 
     const rate = dayRate(people, settings);
-    expect(rate).toBeCloseTo(3.6047, 4); // 465 / 129
+    expect(rate).toBeCloseTo(5.1572, 4); // 410 / 79.5
 
-    const ana = people[4];
-    expect(personCarCharge(ana, rate)).toBeCloseTo(18.02, 2);
-    drivers.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(111.74, 2));
+    expect(personCarCharge(people[3], rate)).toBeCloseTo(7.74, 2);
+    members.forEach((m) => expect(personCarCharge(m, rate)).toBeCloseTo(134.09, 2));
   });
 
-  it('still collects exactly €465 in total', () => {
-    const people = [...drivers, member({ name: 'Ana', included: false, role: 'Guest', rideDays: 5 })];
+  it('still collects exactly €410 in total', () => {
+    const people = [
+      ...members,
+      member({ name: 'Lucia', included: false, role: 'Non-driver', rideDays: 1.5 }),
+      member({ name: 'John', included: false, role: 'Non-driver', rideDays: 3 }),
+    ];
     const rate = dayRate(people, settings);
     const collected = people.reduce((sum, m) => sum + personCarCharge(m, rate), 0);
-    expect(collected).toBeCloseTo(465, 6);
+    expect(collected).toBeCloseTo(410, 6);
   });
 
-  it('charges every driver the identical rate per day — the reason this model was chosen', () => {
+  it('charges every member the identical rate per day — the reason this model was chosen', () => {
     const people = [
-      ...drivers,
+      ...members,
       member({ name: 'Leaves early', daysActive: 10 }),
-      member({ name: 'Ana', included: false, role: 'Guest', rideDays: 5 }),
+      member({ name: 'Lucia', included: false, role: 'Non-driver', rideDays: 2.5 }),
     ];
     const rate = dayRate(people, settings);
     const perDay = people
@@ -161,9 +176,66 @@ describe('day rate', () => {
     perDay.forEach((r) => expect(r).toBeCloseTo(perDay[0], 10));
   });
 
-  it('charges nothing to a non-driver who never rode', () => {
-    const people = [...drivers, member({ name: 'Roberta', included: false, rideDays: 0 })];
-    expect(personCarCharge(people[4], dayRate(people, settings))).toBe(0);
+  it('charges nothing to a rider who never rode', () => {
+    const people = [...members, member({ name: 'Bonnie', included: false, rideDays: 0 })];
+    expect(personCarCharge(people[3], dayRate(people, settings))).toBe(0);
+  });
+});
+
+describe('half days', () => {
+  const taxi = (over: Partial<Trip> = {}) =>
+    trip({ driver: 'Julia', riders: ['Lucia'], taxi: true, tripType: 'One-way', ...over });
+
+  it('charges half a day for a single one-way taxi drop-off', () => {
+    expect(personRideDays('Lucia', [taxi()])).toBe(0.5);
+  });
+
+  it('charges a full day when the taxi waits and brings them back', () => {
+    expect(personRideDays('Lucia', [taxi({ tripType: 'Round trip' })])).toBe(1);
+  });
+
+  it('charges a full day once they take a second ride that day', () => {
+    expect(personRideDays('Lucia', [taxi({ id: 'a' }), taxi({ id: 'b' })])).toBe(1);
+  });
+
+  it('charges a full day for an ordinary shared trip, one-way or not', () => {
+    const shared = trip({ driver: 'Julia', riders: ['Lucia'], taxi: false, tripType: 'One-way' });
+    expect(personRideDays('Lucia', [shared])).toBe(1);
+  });
+
+  it('adds half days across separate dates', () => {
+    const days = [taxi({ id: 'a', date: '2026-08-10' }), taxi({ id: 'b', date: '2026-08-12' })];
+    expect(personRideDays('Lucia', days)).toBe(1);
+  });
+
+  it('gives the taxi driver no day at all', () => {
+    expect(personRideDays('Julia', [taxi()])).toBe(0);
+  });
+});
+
+describe('taxi trips', () => {
+  it('divides the cost between the passengers and spares the driver', () => {
+    const cost = tripCost({ distanceKm: 28, riderCount: 2, taxi: true }, settings);
+    expect(cost.people).toBe(2);
+    expect(cost.perPerson).toBeCloseTo(2.13, 2);
+  });
+
+  it('charges the driver nothing on their own taxi run', () => {
+    const run = trip({
+      driver: 'Julia',
+      riders: ['Lucia', 'Bonnie'],
+      taxi: true,
+      people: 2,
+      total: 4.26,
+      perPerson: 2.13,
+    });
+    expect(personTripCosts('Julia', [run])).toBe(0);
+    expect(personTripCosts('Lucia', [run])).toBeCloseTo(2.13, 2);
+  });
+
+  it('falls back to a normal split when a taxi run has no passengers', () => {
+    const cost = tripCost({ distanceKm: 28, riderCount: 0, taxi: true }, settings);
+    expect(cost.people).toBe(1);
   });
 });
 
@@ -225,15 +297,15 @@ describe('person ledger', () => {
       member({ name: 'Robin' }),
       member({ name: 'Julia' }),
       member({ name: 'Jonas' }),
-      member({ name: 'John' }),
     ];
     const payments: Payment[] = [
-      { date: '2026-08-01', name: 'Robin', type: 'prepayment', amount: 465, note: '' },
+      { date: '2026-08-06', name: 'Robin', type: 'prepayment', amount: 410, note: '' },
     ];
     const rate = dayRate(people, settings);
     const ledgers = people.map((m) => personLedger(m, [], payments, rate));
 
-    expect(ledgers[0].balance).toBeCloseTo(-348.75, 2);
+    // He fronted €410 and owes €136.67 of it himself.
+    expect(ledgers[0].balance).toBeCloseTo(-273.33, 2);
     const owedByOthers = ledgers.slice(1).reduce((sum, l) => sum + l.balance, 0);
     expect(owedByOthers).toBeCloseTo(-ledgers[0].balance, 6);
   });

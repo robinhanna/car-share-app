@@ -19,14 +19,20 @@ var SHEETS = {
   karmaActions: 'Karma Actions',
   payments: 'Payments',
   rideDays: 'Ride Days',
+  rideRequests: 'Ride Requests',
 };
 
-// Trip Log columns (1-indexed), A-L are the original spreadsheet, M-T are new.
+// Trip Log columns (1-indexed), A-L are the original spreadsheet, M-V are new.
 var TRIP = {
   date: 1, driver: 2, destination: 3, manualKm: 4, distance: 5, fuel: 6,
   tolls: 7, parking: 8, total: 9, people: 10, perPerson: 11, notes: 12,
   id: 13, riders: 14, tripType: 15, reservationId: 16, clientId: 17,
-  odoStart: 18, odoEnd: 19, activity: 20,
+  odoStart: 18, odoEnd: 19, activity: 20, taxi: 21, rideRequestId: 22,
+};
+
+var RIDE_REQ = {
+  id: 1, created: 2, passenger: 3, others: 4, when: 5, from: 6, to: 7,
+  notes: 8, status: 9, driver: 10, tripId: 11, clientId: 12,
 };
 
 var RES = {
@@ -114,6 +120,9 @@ function applyOp_(op) {
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
     case 'logPayment': return logPayment_(op.clientId, op.payload || {});
     case 'settleUp': return settleUp_(op.clientId, op.payload || {});
+    case 'requestRide': return requestRide_(op.clientId, op.payload || {});
+    case 'claimRide': return claimRide_(op.payload || {});
+    case 'cancelRide': return cancelRide_(op.payload || {});
     case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
   }
@@ -133,6 +142,7 @@ function bootstrap_() {
     karmaLog: readKarmaLog_(ss),
     payments: readPayments_(ss),
     reservations: readReservations_(ss),
+    rideRequests: readRideRequests_(ss),
     recentTrips: readTrips_(ss),
   };
 }
@@ -140,7 +150,11 @@ function bootstrap_() {
 function readSettings_(ss) {
   var s = ss.getSheetByName(SHEETS.settings);
   return {
-    totalCost: num_(s.getRange('B3').getValue()),
+    // What everyone shares: the rental plus any extras such as the Uber to
+    // collect the car. B3 alone is just the rental.
+    totalCost: num_(s.getRange('B15').getValue()),
+    rentalCost: num_(s.getRange('B3').getValue()),
+    extras: num_(s.getRange('B14').getValue()),
     monthStart: iso_(s.getRange('B4').getValue()),
     monthEnd: iso_(s.getRange('B5').getValue()),
     totalMemberDays: num_(s.getRange('B6').getValue()),
@@ -356,7 +370,7 @@ function readTrips_(ss) {
   var s = ss.getSheetByName(SHEETS.trips);
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
-  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.activity).getValues()
+  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.rideRequestId).getValues()
     .filter(function (r) { return String(r[TRIP.driver - 1]).trim() !== ''; });
   return rows.map(function (r) {
     return {
@@ -374,6 +388,7 @@ function readTrips_(ss) {
       riders: splitList_(r[TRIP.riders - 1]),
       tripType: String(r[TRIP.tripType - 1] || ''),
       activity: String(r[TRIP.activity - 1] || ''),
+      taxi: String(r[TRIP.taxi - 1]).trim().toLowerCase() === 'yes',
     };
   });
 }
@@ -391,7 +406,10 @@ function completeTrip_(clientId, p) {
   ensureTripFormulas_(sheet, row);
 
   var riders = p.riders || [];
-  var people = 1 + riders.length;
+  // A "taxi" with nobody in the back is just a drive, so it falls through to
+  // the normal split rather than dividing a cost by zero.
+  var isTaxi = !!p.taxi && riders.length > 0;
+  var people = isTaxi ? riders.length : 1 + riders.length;
   var tripId = p.tripId || clientId;
 
   sheet.getRange(row, TRIP.date).setValue(p.date ? new Date(p.date) : new Date());
@@ -410,8 +428,11 @@ function completeTrip_(clientId, p) {
   sheet.getRange(row, TRIP.odoStart).setValue(p.odoStart == null ? '' : p.odoStart);
   sheet.getRange(row, TRIP.odoEnd).setValue(p.odoEnd == null ? '' : p.odoEnd);
   sheet.getRange(row, TRIP.activity).setValue(p.activity || '');
+  sheet.getRange(row, TRIP.taxi).setValue(isTaxi ? 'Yes' : 'No');
+  sheet.getRange(row, TRIP.rideRequestId).setValue(p.rideRequestId || '');
 
   if (p.reservationId) closeReservation_(ss, p.reservationId, 'completed', tripId);
+  if (p.rideRequestId) closeRideRequest_(ss, p.rideRequestId, 'done', '', tripId);
 
   // The driver fronted the tolls and parking, so credit them — otherwise they
   // are charged a share of money they have already spent.
@@ -579,6 +600,120 @@ function writePayment_(ss, clientId, when, name, type, amount, note) {
   return { row: row, amount: amount };
 }
 
+// ------------------------------------------------------------ ride requests
+
+/**
+ * Someone without the car asking to be driven somewhere. A driver picks it up,
+ * and the passenger sees who. When it's completed the resulting trip is flagged
+ * as a taxi run, which is what keeps the driver off the bill.
+ */
+function requestRide_(clientId, p) {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.rideRequests);
+
+  var existing = findByClientId_(sheet, RIDE_REQ.clientId);
+  if (existing[clientId]) return { row: existing[clientId], duplicate: true };
+
+  var id = p.id || clientId;
+  var row = firstEmptyRow_(sheet, RIDE_REQ.id);
+  sheet.getRange(row, RIDE_REQ.id, 1, 12).setValues([[
+    id,
+    new Date().toISOString(),
+    p.passenger || '',
+    (p.others || []).join(', '),
+    p.when ? new Date(p.when) : '',
+    p.from || '',
+    p.to || '',
+    p.notes || '',
+    'open',
+    '',
+    '',
+    clientId,
+  ]]);
+  return { row: row, id: id };
+}
+
+function claimRide_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var found = findRideRequest_(sheet, p.id);
+  if (!found) throw new Error('Ride request not found: ' + p.id);
+
+  var status = String(sheet.getRange(found, RIDE_REQ.status).getValue()).trim();
+  var driver = String(sheet.getRange(found, RIDE_REQ.driver).getValue()).trim();
+  // Two drivers can tap Claim at the same time, or one phone can replay an
+  // offline claim after another has taken it. First one wins.
+  if (status === 'claimed' && driver && driver !== p.driver) {
+    return { id: p.id, driver: driver, alreadyClaimed: true };
+  }
+  if (status === 'done' || status === 'cancelled') {
+    return { id: p.id, status: status, alreadyClaimed: true };
+  }
+
+  sheet.getRange(found, RIDE_REQ.status).setValue('claimed');
+  sheet.getRange(found, RIDE_REQ.driver).setValue(p.driver || '');
+  return { id: p.id, driver: p.driver, status: 'claimed' };
+}
+
+function cancelRide_(p) {
+  var ss = SpreadsheetApp.getActive();
+  if (!closeRideRequest_(ss, p.id, 'cancelled', '', '')) {
+    throw new Error('Ride request not found: ' + p.id);
+  }
+  return { id: p.id, status: 'cancelled' };
+}
+
+function closeRideRequest_(ss, id, status, driver, tripId) {
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var row = findRideRequest_(sheet, id);
+  if (!row) return false;
+  sheet.getRange(row, RIDE_REQ.status).setValue(status);
+  if (driver) sheet.getRange(row, RIDE_REQ.driver).setValue(driver);
+  if (tripId) sheet.getRange(row, RIDE_REQ.tripId).setValue(tripId);
+  return true;
+}
+
+function findRideRequest_(sheet, id) {
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return 0;
+  var ids = sheet.getRange(FIRST_DATA_ROW, RIDE_REQ.id, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) return FIRST_DATA_ROW + i;
+  }
+  return 0;
+}
+
+function readRideRequests_(ss) {
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  if (!sheet) return [];
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return [];
+  var cutoff = new Date(Date.now() - 2 * 24 * 3600 * 1000);
+
+  return sheet.getRange(FIRST_DATA_ROW, 1, last - 2, 12).getValues()
+    .filter(function (r) { return String(r[RIDE_REQ.id - 1]).trim() !== ''; })
+    .map(function (r) {
+      return {
+        id: String(r[RIDE_REQ.id - 1]),
+        created: iso_(r[RIDE_REQ.created - 1]),
+        passenger: String(r[RIDE_REQ.passenger - 1]),
+        others: splitList_(r[RIDE_REQ.others - 1]),
+        when: iso_(r[RIDE_REQ.when - 1]),
+        from: String(r[RIDE_REQ.from - 1] || ''),
+        to: String(r[RIDE_REQ.to - 1] || ''),
+        notes: String(r[RIDE_REQ.notes - 1] || ''),
+        status: String(r[RIDE_REQ.status - 1] || 'open'),
+        driver: String(r[RIDE_REQ.driver - 1] || ''),
+        tripId: String(r[RIDE_REQ.tripId - 1] || ''),
+      };
+    })
+    .filter(function (r) {
+      // Everything still live, plus the last couple of days of history so a
+      // passenger can still see who drove them.
+      if (r.status === 'open' || r.status === 'claimed') return true;
+      return r.created && new Date(r.created) > cutoff;
+    });
+}
+
 // ---------------------------------------------------------------- ride days
 
 /**
@@ -604,6 +739,8 @@ function rebuildRideDays_(ss) {
     var key = name.trim();
     if (!key) return null;
     if (!byName[key]) {
+      // days maps a calendar day to the trips that person took on it, because
+      // half-day pricing depends on how many and what kind, not just whether.
       byName[key] = { name: key, days: {}, tripCosts: 0, member: null };
       order.push(key);
     }
@@ -619,20 +756,29 @@ function rebuildRideDays_(ss) {
   var trips = ss.getSheetByName(SHEETS.trips);
   var lastTrip = trips.getLastRow();
   if (lastTrip >= FIRST_DATA_ROW) {
-    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.activity).getValues();
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.rideRequestId).getValues();
     rows.forEach(function (r) {
       var driver = String(r[TRIP.driver - 1]).trim();
       if (!driver) return;
 
       var riders = splitList_(r[TRIP.riders - 1]);
-      var occupants = [driver].concat(riders);
+      var isTaxi = String(r[TRIP.taxi - 1]).trim().toLowerCase() === 'yes' && riders.length > 0;
+
+      // On a taxi run the driver was doing someone a favour: no fuel share and
+      // no day charged, even when the driver is themselves a rider.
+      var occupants = isTaxi ? riders : [driver].concat(riders);
+
       var dayKey = dateKey_(r[TRIP.date - 1]);
       var perPerson = num_(r[TRIP.perPerson - 1]);
+      var oneWay = String(r[TRIP.tripType - 1]).trim().toLowerCase() === 'one-way';
 
       occupants.forEach(function (name) {
         var p = person(name);
         if (!p) return;
-        if (dayKey) p.days[dayKey] = true;
+        if (dayKey) {
+          if (!p.days[dayKey]) p.days[dayKey] = [];
+          p.days[dayKey].push({ taxi: isTaxi, oneWay: oneWay });
+        }
         p.tripCosts += perPerson;
       });
     });
@@ -643,14 +789,17 @@ function rebuildRideDays_(ss) {
   var riderDays = 0;
   order.forEach(function (key) {
     var p = byName[key];
-    p.rideDays = Object.keys(p.days).length;
+    p.rideDays = 0;
+    Object.keys(p.days).forEach(function (day) {
+      p.rideDays += dayCharge_(p.days[day]);
+    });
     p.included = !!(p.member && p.member.included);
     if (p.included) memberDays += p.member.daysActive;
     else riderDays += p.rideDays;
   });
 
   var settings = ss.getSheetByName(SHEETS.settings);
-  var totalCost = num_(settings.getRange('B3').getValue());
+  var totalCost = num_(settings.getRange('B15').getValue());
   var denominator = memberDays + riderDays;
   var dayRate = denominator > 0 ? totalCost / denominator : 0;
 
@@ -676,6 +825,20 @@ function rebuildRideDays_(ss) {
   SpreadsheetApp.flush();
 
   return { dayRate: dayRate, memberDays: memberDays, riderDays: riderDays, people: out.length };
+}
+
+/**
+ * What one calendar day in the car costs a rider.
+ *
+ * Half a day is reserved for the short drop-offs: a single taxi ride, one-way.
+ * Riding along on an ordinary shared trip is a full day however brief it was —
+ * the car was out on a group outing rather than doing one person a favour — and
+ * a second ride on the same day makes it a full day regardless.
+ */
+function dayCharge_(tripsThatDay) {
+  if (!tripsThatDay || !tripsThatDay.length) return 0;
+  if (tripsThatDay.length === 1 && tripsThatDay[0].taxi && tripsThatDay[0].oneWay) return 0.5;
+  return 1;
 }
 
 /** Local calendar day, so two trips on one date count once. */
@@ -715,7 +878,8 @@ function resetTestData_(p) {
     var rows = lastTrip - FIRST_DATA_ROW + 1;
     [TRIP.date, TRIP.driver, TRIP.destination, TRIP.manualKm, TRIP.tolls, TRIP.parking,
      TRIP.people, TRIP.notes, TRIP.id, TRIP.riders, TRIP.tripType, TRIP.reservationId,
-     TRIP.clientId, TRIP.odoStart, TRIP.odoEnd].forEach(function (col) {
+     TRIP.clientId, TRIP.odoStart, TRIP.odoEnd, TRIP.activity, TRIP.taxi,
+     TRIP.rideRequestId].forEach(function (col) {
       trips.getRange(FIRST_DATA_ROW, col, rows, 1).clearContent();
     });
     cleared.trips = rows;
@@ -723,6 +887,7 @@ function resetTestData_(p) {
 
   cleared.karma = clearRows_(ss.getSheetByName(SHEETS.karma), 5);
   cleared.reservations = clearRows_(ss.getSheetByName(SHEETS.reservations), 11);
+  cleared.rideRequests = clearRows_(ss.getSheetByName(SHEETS.rideRequests), 12);
   cleared.payments = clearPaymentsKeepingPrepayments_(ss);
 
   SpreadsheetApp.flush();

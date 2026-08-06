@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
-import type { Place, Spot, TripType } from '../api/types';
+import type { Place, RideRequest, Spot, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
 import { localDateInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
@@ -9,12 +9,14 @@ import { RiderPicker } from './RiderPicker';
 interface Props {
   me: string;
   reservationId?: string;
+  /** Set when this trip is fulfilling someone's ride request. */
+  ride?: RideRequest;
   onDone: (cost: TripCost, destination: string) => void;
 }
 
 type Mode = 'spot' | 'odometer' | 'manual';
 
-export function LogTrip({ me, reservationId, onDone }: Props) {
+export function LogTrip({ me, reservationId, ride, onDone }: Props) {
   const { bootstrap } = useApp();
   const spots = bootstrap?.spots ?? [];
   const places = bootstrap?.places ?? [];
@@ -30,7 +32,10 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
   const [manualKm, setManualKm] = useState('');
   const [odoStart, setOdoStart] = useState('');
   const [odoEnd, setOdoEnd] = useState('');
-  const [riders, setRiders] = useState<string[]>([]);
+  const [riders, setRiders] = useState<string[]>(
+    ride ? [ride.passenger, ...ride.others] : [],
+  );
+  const [taxi, setTaxi] = useState(!!ride);
   const [tolls, setTolls] = useState('');
   const [parking, setParking] = useState('');
   const [notes, setNotes] = useState('');
@@ -60,6 +65,7 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
           tolls: numOrNull(tolls) ?? 0,
           parking: numOrNull(parking) ?? 0,
           riderCount: riders.length,
+          taxi,
         },
         settings,
       )
@@ -87,6 +93,8 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
       parking: numOrNull(parking) ?? 0,
       notes,
       reservationId: reservationId ?? '',
+      taxi,
+      rideRequestId: ride?.id ?? '',
     });
     onDone(cost, destination);
   };
@@ -181,6 +189,27 @@ export function LogTrip({ me, reservationId, onDone }: Props) {
       )}
 
       <RiderPicker me={me} selected={riders} onChange={setRiders} />
+
+      <div class="field">
+        <span>Who's paying?</span>
+        <div class="segmented">
+          <button aria-pressed={!taxi} onClick={() => setTaxi(false)}>
+            Split with me
+          </button>
+          <button
+            aria-pressed={taxi}
+            disabled={riders.length === 0}
+            onClick={() => setTaxi(true)}
+          >
+            I drove them
+          </button>
+        </div>
+        <p class="muted" style="margin:8px 0 0">
+          {taxi
+            ? `A lift: the ${riders.length === 1 ? 'passenger covers' : 'passengers cover'} the cost, you pay nothing.`
+            : 'A shared trip: the cost splits between everyone in the car, you included.'}
+        </p>
+      </div>
 
       <div class="row">
         <label class="field">

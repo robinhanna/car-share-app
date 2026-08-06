@@ -3,6 +3,7 @@ import type { Payment } from '../api/types';
 import { ADMIN_MEMBER } from '../config';
 import {
   dayRate,
+  days,
   euro,
   km,
   personLedger,
@@ -69,7 +70,7 @@ export function PersonDetail({ name, me }: Props) {
       <ul class="list">
         <li>
           <span>
-            {ledger.chargedDays} {member.included ? 'days here' : 'days in the car'} ×{' '}
+            {days(ledger.chargedDays)} {member.included ? "here" : "in the car"} ×{" "}
             {euro(rate)}
           </span>
           <span class="amount">{euro(ledger.carCharge)}</span>
@@ -173,14 +174,19 @@ function SettleUp({ name, me }: { name: string; me: string }) {
   const [theyPaid, setTheyPaid] = useState(true);
   const [done, setDone] = useState<string | null>(null);
 
+  const { bootstrap } = useApp();
+  const everyoneElse = (bootstrap?.members ?? []).map((m) => m.name).filter((n) => n !== me);
+  const [withWhom, setWithWhom] = useState(everyoneElse[0] ?? '');
+
   const value = Number(amount);
   const ownPage = name === me;
-  const counterparty = ownPage ? ADMIN_MEMBER : me;
+  const isAdmin = me === ADMIN_MEMBER;
 
-  // On your own page you are always the one paying. On someone else's, you
-  // choose which way the money went.
-  const from = ownPage ? me : theyPaid ? name : me;
-  const to = ownPage ? ADMIN_MEMBER : theyPaid ? me : name;
+  // Robin is everyone's counterparty, so on his own page he picks who. For
+  // anyone else their own page means "I paid Robin", and on someone else's page
+  // only Robin may write, in either direction.
+  const from = ownPage ? (isAdmin ? withWhom : me) : theyPaid ? name : me;
+  const to = ownPage ? (isAdmin ? me : ADMIN_MEMBER) : theyPaid ? me : name;
 
   const save = async () => {
     await queueOp('settleUp', {
@@ -197,10 +203,10 @@ function SettleUp({ name, me }: { name: string; me: string }) {
     setTimeout(() => setDone(null), 3000);
   };
 
-  // Your own page: record what you paid Robin. Robin's pages: record either
-  // direction with anyone. Everything else — Julia looking at Jonas — has no
-  // business writing an entry, so there's no button.
-  const allowed = ownPage ? me !== ADMIN_MEMBER : me === ADMIN_MEMBER;
+  // Everyone can record a settle-up on their own page; Robin can also record
+  // one on anybody's. Julia looking at Jonas has no business writing an entry
+  // about the two of them, so there's no button there.
+  const allowed = ownPage || isAdmin;
   if (!allowed) return null;
 
   return (
@@ -210,11 +216,27 @@ function SettleUp({ name, me }: { name: string; me: string }) {
 
       {!open ? (
         <button class="btn btn--secondary" onClick={() => setOpen(true)}>
-          Settle up{ownPage ? ` with ${counterparty}` : ''}
+          {ownPage && !isAdmin ? `Settle up with ${ADMIN_MEMBER}` : 'Settle up'}
         </button>
       ) : (
         <div class="card">
           <p class="kicker">Settle up</p>
+
+          {ownPage && isAdmin && (
+            <label class="field">
+              <span>Who paid you?</span>
+              <select
+                value={withWhom}
+                onChange={(e) => setWithWhom((e.target as HTMLSelectElement).value)}
+              >
+                {everyoneElse.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {!ownPage && (
             <div class="field">

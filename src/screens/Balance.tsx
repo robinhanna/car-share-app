@@ -3,6 +3,7 @@ import type { Member } from '../api/types';
 import { ADMIN_MEMBER, RESET_ENABLED } from '../config';
 import {
   dayRate,
+  days,
   euro,
   personLedger,
   totalMemberDays,
@@ -47,7 +48,7 @@ export function Balance({ me, onOpenPerson }: Props) {
             {euro(Math.abs(mine.balance))}
           </p>
           <p class="muted">
-            {mine.chargedDays} days × {euro(rate)} = {euro(mine.carCharge)} car
+            {days(mine.chargedDays)} × {euro(rate)} = {euro(mine.carCharge)} car
             {mine.tripCosts > 0 ? ` · ${euro(mine.tripCosts)} trips` : ''}
             {mine.paid > 0 ? ` · ${euro(mine.paid)} paid` : ''}
           </p>
@@ -127,7 +128,7 @@ function Group({
                 </strong>
                 <br />
                 <span class="muted">
-                  {l.chargedDays} days · {euro(l.carCharge + l.tripCosts)} charged
+                  {days(l.chargedDays)} · {euro(l.carCharge + l.tripCosts)} charged
                 </span>
               </span>
               <span class={`amount ${l.balance > 0.01 ? 'amount--owed' : 'amount--clear'}`}>
@@ -177,7 +178,7 @@ function ResetPanel() {
           <>
             <p class="muted">
               Empties Trip Log, Karma Log, Reservations and Payments. Members, Settings, Surf
-              Spots, Places and Karma Actions are left alone, your €465 prepayment is kept, and a
+              Spots, Places and Karma Actions are left alone, your prepayment is kept, and a
               backup tab is written first.
             </p>
             <button class="btn btn--danger" onClick={() => setOpen(true)}>

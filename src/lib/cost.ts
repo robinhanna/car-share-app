@@ -46,6 +46,8 @@ export interface TripCostInput {
   tolls?: number;
   parking?: number;
   riderCount: number;
+  /** A favour, not a shared outing: the driver pays nothing. */
+  taxi?: boolean;
 }
 
 export interface TripCost {
@@ -69,7 +71,12 @@ export function tripCost(input: TripCostInput, settings: Settings): TripCost {
   const parking = input.parking ?? 0;
   const fuel = fuelCost(input.distanceKm, settings);
   const total = fuel + tolls + parking;
-  const people = Math.max(1 + input.riderCount, 1);
+
+  // On a taxi run the cost divides between the passengers only. With nobody in
+  // the back there is no favour being done, so it falls back to a normal split
+  // rather than dividing by zero.
+  const isTaxi = !!input.taxi && input.riderCount > 0;
+  const people = isTaxi ? input.riderCount : Math.max(1 + input.riderCount, 1);
 
   return {
     distanceKm: input.distanceKm,
@@ -111,9 +118,43 @@ export function personCarCharge(member: Member, rate: number): number {
   return (member.included ? member.daysActive : member.rideDays) * rate;
 }
 
-/** Every trip this person was in, driver or rider. */
+/**
+ * Every trip this person was in.
+ *
+ * A taxi driver isn't "in" their own taxi run for costing purposes: they were
+ * doing a favour, so the run neither charges them nor counts as their day.
+ */
 export function personTrips(name: string, trips: Trip[]): Trip[] {
-  return trips.filter((t) => t.driver === name || t.riders.includes(name));
+  return trips.filter((t) => {
+    if (t.riders.includes(name)) return true;
+    return t.driver === name && !(t.taxi && t.riders.length > 0);
+  });
+}
+
+/**
+ * What one calendar day in the car costs a rider. Mirrors dayCharge_ in
+ * apps-script/Code.gs.
+ *
+ * Half a day is reserved for a single one-way taxi drop-off. Riding along on an
+ * ordinary shared trip is a full day however short, and a second ride the same
+ * day makes it a full day regardless.
+ */
+export function dayCharge(tripsThatDay: Trip[]): number {
+  if (!tripsThatDay.length) return 0;
+  const only = tripsThatDay[0];
+  if (tripsThatDay.length === 1 && only.taxi && only.tripType === 'One-way') return 0.5;
+  return 1;
+}
+
+/** Their ride-days across the month, half days included. */
+export function personRideDays(name: string, trips: Trip[]): number {
+  const byDay = new Map<string, Trip[]>();
+  personTrips(name, trips).forEach((t) => {
+    const day = (t.date || '').slice(0, 10);
+    if (!day) return;
+    byDay.set(day, [...(byDay.get(day) ?? []), t]);
+  });
+  return [...byDay.values()].reduce((sum, dayTrips) => sum + dayCharge(dayTrips), 0);
 }
 
 /** Their equal share of fuel, tolls and parking across those trips. */
@@ -168,6 +209,13 @@ export function euro(value: number): string {
 
 export function km(value: number): string {
   return `${Math.round(value * 10) / 10} km`;
+}
+
+/** Ride-days can be fractional — a single one-way taxi drop-off is half a day. */
+export function days(value: number): string {
+  const rounded = Math.round(value * 2) / 2;
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${text} ${rounded === 1 ? 'day' : 'days'}`;
 }
 
 function isNum(v: number | null | undefined): v is number {
