@@ -615,3 +615,66 @@ function ensureToken_() {
 function showToken() {
   Logger.log('APP_TOKEN = ' + ensureToken_());
 }
+
+/**
+ * Run this after pasting the code, before setupSheet().
+ *
+ * Pasting a thousand-line file into a browser editor sometimes truncates, and
+ * a half-pasted file fails in confusing ways much later — usually as a wrong
+ * number rather than an error. This checks every function the app actually
+ * calls is present, and names the ones that aren't.
+ */
+function verifyInstall() {
+  var required = [
+    // Code.gs
+    'doGet', 'doPost', 'applyOp_', 'bootstrap_', 'readSettings_', 'rawMembers_',
+    'readMembers_', 'readRideDays_', 'sumPaymentsFor_', 'readPlaces_', 'readPayments_',
+    'readKarmaLog_', 'readSpots_', 'readKarmaActions_', 'readReservations_', 'readTrips_',
+    'requestRide_', 'claimRide_', 'cancelRide_', 'closeRideRequest_', 'findRideRequest_',
+    'readRideRequests_', 'rebuildRideDays_', 'dayCharge_', 'dateKey_', 'resetTestData_',
+    'clearPaymentsKeepingPrepayments_', 'clearRows_', 'backupLogs_', 'pruneBackups_',
+    'completeTrip_', 'createReservation_', 'cancelReservation_', 'closeReservation_',
+    'logKarma_', 'logPayment_', 'settleUp_', 'writePayment_', 'checkToken_',
+    'findByClientId_', 'firstEmptyRow_', 'ensureTripFormulas_', 'splitList_', 'num_',
+    'iso_', 'json_',
+    // setup.gs
+    'setupSheet', 'setupReservations_', 'setupRideRequests_', 'setupKarmaActions_',
+    'setupKarmaLog_', 'setupPlaces_', 'setupPayments_', 'setupRideDays_', 'setupSettings_',
+    'migrateConfig_', 'memberRows_', 'migrateMembersTotals_', 'setupMemberRoster_',
+    'setupMembers_', 'setFormulaVerified_', 'setupTripLog_', 'applyDistanceFormulas_',
+    'writeDistanceFormulas_', 'findProbeRow_', 'probeLooksRight_', 'ensureToken_',
+    'showToken', 'diagnoseTripLog',
+  ];
+
+  var missing = [];
+  required.forEach(function (name) {
+    if (typeof this[name] !== 'function') missing.push(name);
+  }, this);
+
+  // Globals from the top of Code.gs. Checked by name through the global object
+  // rather than referenced directly: if Code.gs is missing entirely, naming it
+  // in code would throw a ReferenceError and bury the actual diagnosis.
+  var badGlobals = [];
+  ['SHEETS', 'TRIP', 'RIDE_REQ', 'MEMBER', 'PAY', 'RIDE', 'PLACE', 'MEMBER_ROWS', 'ROSTER']
+    .forEach(function (name) {
+      if (typeof this[name] === 'undefined') badGlobals.push(name);
+    }, this);
+
+  if (missing.length || badGlobals.length) {
+    Logger.log('INCOMPLETE PASTE — do not run setupSheet() yet.');
+    if (badGlobals.length) {
+      Logger.log('Code.gs is missing or cut short (no ' + badGlobals.join(', ') + ').');
+    }
+    if (missing.length) {
+      Logger.log('Missing ' + missing.length + ' function(s): ' + missing.slice(0, 12).join(', ') +
+        (missing.length > 12 ? ' …' : ''));
+    }
+    Logger.log('Re-paste both files in full, save, and run verifyInstall() again.');
+    return;
+  }
+
+  Logger.log('Both files are complete: ' + required.length + ' functions present.');
+  Logger.log('Trip Log goes up to column ' + TRIP.rideRequestId + ' (V), members ' + MEMBER_ROWS +
+    ' rows, roster ' + ROSTER.length + ' people.');
+  Logger.log('Safe to run setupSheet().');
+}
