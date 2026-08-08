@@ -7,6 +7,16 @@
  */
 export const EXPECTED_CODE_VERSION = 10;
 
+/**
+ * The fast path on the reserve screen: the trips this group actually makes.
+ *
+ * Durations are minutes. Destinations must match a name in the Surf Spots or
+ * Places tabs — a chip whose name isn't there is dropped rather than rendered,
+ * since it would otherwise book a place the distance lookup can't price.
+ */
+export const QUICK_DURATIONS = [30, 60, 120];
+export const QUICK_DESTINATIONS = ['Burgau', 'Lagos', 'Praia do Bordeira'];
+
 /** The only member who sees admin controls. Must match a name in the Members tab. */
 export const ADMIN_MEMBER = 'Robin';
 

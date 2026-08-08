@@ -3,6 +3,7 @@ import { loadFactor } from '../lib/cost';
 import type {
   Bootstrap,
   CompleteTripPayload,
+  CreateReservationPayload,
   LogKarmaPayload,
   Member,
   Op,
@@ -65,6 +66,7 @@ let bootstrap: Bootstrap = {
     spot('Sagres & west tip', 'Castelejo', 19, 24),
     spot('Sagres & west tip', 'Cordoama', 20, 25),
     spot('Alvor / Portimão', 'Alvor', 19, 24),
+    spot('West coast — Carrapateira/Aljezur', 'Praia do Bordeira', 36, 40),
   ],
   places: [
     { category: 'Town', name: 'Lagos', oneWayKm: 13, notes: '' },
@@ -161,6 +163,19 @@ export async function mockBootstrap(): Promise<Bootstrap> {
 export async function mockPost(ops: Op[]): Promise<PostResponse> {
   await delay(200);
   ops.forEach((op) => {
+    // Was missing entirely, so a booking made in dev vanished on save and the
+    // reserve screen couldn't be exercised end to end.
+    if (op.op === 'createReservation') {
+      const r = op.payload as CreateReservationPayload;
+      bootstrap = {
+        ...bootstrap,
+        reservations: [
+          ...bootstrap.reservations,
+          { ...r, created: new Date().toISOString(), status: 'reserved', tripId: '' },
+        ],
+      };
+    }
+
     if (op.op === 'cancelReservation') {
       const { id } = op.payload as { id: string };
       bootstrap = {
@@ -382,23 +397,6 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
           ...bootstrap.rideRequests,
           { ...r, created: new Date().toISOString(), status: 'open', driver: '', tripId: '' },
         ],
-      };
-    }
-
-    if (op.op === 'joinReservation' || op.op === 'joinRide') {
-      const { id, name, join } = op.payload as JoinPayload;
-      const toggle = (list: string[]) => {
-        const without = list.filter((n) => n !== name);
-        return join ? [...without, name] : without;
-      };
-      bootstrap = {
-        ...bootstrap,
-        reservations: bootstrap.reservations.map((r) =>
-          r.id === id ? { ...r, riders: toggle(r.riders) } : r,
-        ),
-        rideRequests: bootstrap.rideRequests.map((r) =>
-          r.id === id ? { ...r, others: toggle(r.others) } : r,
-        ),
       };
     }
 

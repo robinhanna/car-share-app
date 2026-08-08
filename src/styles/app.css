@@ -149,6 +149,20 @@ h1 + .spacer + .card {
   gap: 12px;
 }
 
+/*
+ * Keeps a form's primary action on screen while you scroll the fields above it.
+ * The negative margins let the paper background run to the edges of .shell, so
+ * content scrolling underneath doesn't show in the gutters.
+ */
+.sticky-action {
+  position: sticky;
+  bottom: 0;
+  margin: 0 -20px calc(-24px - env(safe-area-inset-bottom));
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  background: var(--paper);
+  border-top: 1px solid var(--sand);
+}
+
 /* ---------------------------------------------------------------- forms */
 
 .field {
