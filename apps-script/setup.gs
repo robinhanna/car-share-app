@@ -241,20 +241,37 @@ function setupSettings_(ss) {
  * the Sheet is the source of truth again and Robin can edit any of it without
  * a later setupSheet() run stamping over him.
  */
-var CONFIG_VERSION = 5;
+/** Where the car actually is. Must match the timeZone in appsscript.json. */
+var TIME_ZONE = 'Europe/Lisbon';
+
+var CONFIG_VERSION = 6;
 
 function migrateConfig_(ss) {
   var props = PropertiesService.getScriptProperties();
   if (Number(props.getProperty('configVersion') || 0) >= CONFIG_VERSION) return;
+
+  // The spreadsheet was created on an account whose default timezone sits
+  // behind Portugal, so every date landed a day early: the app was reading the
+  // rental period as 6–30 August when the migration had written 7–31. Anything
+  // that turns a date into a day — ride-day attribution, the free-day rule, the
+  // date column — was off by one for late-evening trips. Fixing the sheet's own
+  // timezone fixes all of it at once.
+  if (ss.getSpreadsheetTimeZone() !== TIME_ZONE) {
+    Logger.log('Sheet timezone was ' + ss.getSpreadsheetTimeZone() + ' — setting it to ' + TIME_ZONE + '.');
+    ss.setSpreadsheetTimeZone(TIME_ZONE);
+  }
 
   var s = ss.getSheetByName(SHEETS.settings);
   // The owner doesn't charge for the pickup day, so the paid period starts on
   // the 7th. The group has the car on the 6th and will use it — trips that day
   // cost fuel but no day rate, which rebuildRideDays_ handles by only counting
   // ride-days inside B4..B5.
-  s.getRange('B3').setValue(375);                       // 25 days at €15
-  s.getRange('B4').setValue(new Date(2026, 7, 7));      // 7 August
-  s.getRange('B5').setValue(new Date(2026, 7, 31));     // 31 August
+  // Midday, not midnight: a date written at 00:00 lands on the previous day the
+  // moment any timezone shift is applied to it, which is exactly what happened
+  // here. Noon survives anything up to ±12 hours.
+  s.getRange('B3').setValue(375);                            // 25 days at €15
+  s.getRange('B4').setValue(new Date(2026, 7, 7, 12));       // 7 August
+  s.getRange('B5').setValue(new Date(2026, 7, 31, 12));      // 31 August
   s.getRange('B14').setValue(30);                       // Uber to collect the car
 
   // 7.5 L/100km was a guess from before anyone had driven the car. Robin's tank
@@ -808,6 +825,16 @@ function showToken() {
  * number rather than an error. This checks every function the app actually
  * calls is present, and names the ones that aren't.
  */
+/**
+ * What CODE_VERSION in Code.gs should read. Bump both together.
+ *
+ * The function inventory below only proves a file didn't get cut off mid-paste.
+ * It says nothing about a file that pasted perfectly but came from three
+ * versions ago — which is the failure that keeps happening, because pasting and
+ * deploying are separate steps. This constant catches that.
+ */
+var EXPECTED_CODE_VERSION = 10;
+
 function verifyInstall() {
   var required = [
     // Code.gs
@@ -821,13 +848,18 @@ function verifyInstall() {
     'logKarma_', 'logPayment_', 'settleUp_', 'writePayment_', 'checkToken_',
     'findByClientId_', 'firstEmptyRow_', 'ensureTripFormulas_', 'splitList_', 'num_',
     'iso_', 'json_',
+    // Code.gs — lifts, edits and joins
+    'editTrip_', 'deleteTrip_', 'findTripRow_', 'logRide_', 'sweepDueRides_',
+    'knownDistance_', 'awardLiftKarma_', 'removeLiftKarma_', 'liftKarmaAction_',
+    'joinReservation_', 'joinRide_', 'toggleName_', 'tripMatchesReservation_',
     // setup.gs
     'setupSheet', 'setupReservations_', 'setupRideRequests_', 'setupKarmaActions_',
     'setupKarmaLog_', 'setupPlaces_', 'setupPayments_', 'setupRideDays_', 'setupSettings_',
     'migrateConfig_', 'memberRows_', 'migrateMembersTotals_', 'setupMemberRoster_',
     'setupMembers_', 'setFormulaVerified_', 'setupTripLog_', 'applyDistanceFormulas_',
-    'writeDistanceFormulas_', 'findProbeRow_', 'probeLooksRight_', 'ensureToken_',
-    'showToken', 'diagnoseTripLog',
+    'writeDistanceFormulas_', 'writeFuelFormulas_', 'assertNoDecimalLiterals_',
+    'checkSheetHealth_', 'correctSeededPrepayment_', 'findProbeRow_', 'probeLooksRight_',
+    'ensureToken_', 'showToken', 'diagnoseTripLog', 'verifyInstall',
   ];
 
   var missing = [];
@@ -839,7 +871,8 @@ function verifyInstall() {
   // rather than referenced directly: if Code.gs is missing entirely, naming it
   // in code would throw a ReferenceError and bury the actual diagnosis.
   var badGlobals = [];
-  ['SHEETS', 'TRIP', 'RIDE_REQ', 'MEMBER', 'PAY', 'RIDE', 'PLACE', 'MEMBER_ROWS', 'ROSTER']
+  ['SHEETS', 'TRIP', 'RIDE_REQ', 'MEMBER', 'PAY', 'RIDE', 'PLACE', 'MEMBER_ROWS', 'ROSTER',
+    'CODE_VERSION']
     .forEach(function (name) {
       if (typeof this[name] === 'undefined') badGlobals.push(name);
     }, this);
@@ -857,8 +890,20 @@ function verifyInstall() {
     return;
   }
 
-  Logger.log('Both files are complete: ' + required.length + ' functions present.');
-  Logger.log('Trip Log goes up to column ' + TRIP.rideRequestId + ' (V), members ' + MEMBER_ROWS +
+  if (CODE_VERSION !== EXPECTED_CODE_VERSION) {
+    Logger.log('MISMATCHED FILES — Code.gs is v' + CODE_VERSION + ', setup.gs expects v' +
+      EXPECTED_CODE_VERSION + '.');
+    Logger.log(CODE_VERSION < EXPECTED_CODE_VERSION
+      ? 'Code.gs is the older one. Re-paste it in full from the repo.'
+      : 'setup.gs is the older one. Re-paste it in full from the repo.');
+    return;
+  }
+
+  Logger.log('Both files are complete and match: v' + CODE_VERSION + ', ' + required.length +
+    ' functions present.');
+  Logger.log('Trip Log goes up to column ' + TRIP.until + ' (Y), members ' + MEMBER_ROWS +
     ' rows, roster ' + ROSTER.length + ' people.');
   Logger.log('Safe to run setupSheet().');
+  Logger.log('Then Bereitstellen → Bereitstellungen verwalten → Stift → Neue Version, or the ' +
+    'web app keeps serving the old code and nothing you just pasted takes effect.');
 }

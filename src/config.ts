@@ -1,3 +1,12 @@
+/**
+ * The Apps Script version this front-end needs. Must match `CODE_VERSION` in
+ * Code.gs and `EXPECTED_CODE_VERSION` in setup.gs — bump all three together.
+ *
+ * When the deployed backend reports less than this, the app says so on every
+ * screen rather than letting writes vanish into a stale deployment.
+ */
+export const EXPECTED_CODE_VERSION = 10;
+
 /** The only member who sees admin controls. Must match a name in the Members tab. */
 export const ADMIN_MEMBER = 'Robin';
 

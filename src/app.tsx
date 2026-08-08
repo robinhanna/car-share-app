@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Reservation, RideRequest, Trip } from './api/types';
+import { EXPECTED_CODE_VERSION } from './config';
 import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
 import { sync, useApp } from './state/store';
@@ -137,10 +138,24 @@ export function App() {
 }
 
 function Banners() {
-  const { pending, online, syncing, error } = useApp();
+  const { pending, online, syncing, error, bootstrap } = useApp();
+
+  // Pasting the Apps Script and deploying it are separate steps, and skipping
+  // the second one looks exactly like the app being broken: writes go through,
+  // come back accepted, and change nothing. Three rounds of that is enough —
+  // say it plainly instead of leaving it to be diagnosed.
+  const deployed = bootstrap?.codeVersion ?? 0;
+  const stale = !!bootstrap && deployed < EXPECTED_CODE_VERSION;
 
   return (
     <>
+      {stale && (
+        <div class="banner banner--error">
+          The Sheet is running an older version of the backend (v{deployed || '?'}, expected v
+          {EXPECTED_CODE_VERSION}). Deploy a new version in the Apps Script editor — until then
+          some changes won't stick.
+        </div>
+      )}
       {pending.length > 0 && (
         <div class="banner banner--pending">
           <span>

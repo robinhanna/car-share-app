@@ -1,3 +1,4 @@
+import { EXPECTED_CODE_VERSION } from '../config';
 import { loadFactor } from '../lib/cost';
 import type {
   Bootstrap,
@@ -29,6 +30,7 @@ const consumption = 6.0;
 
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
+  codeVersion: EXPECTED_CODE_VERSION,
   settings: {
     totalCost: 405,
     rentalCost: 375,

@@ -138,6 +138,8 @@ export type TripType = 'Round trip' | 'One-way';
 
 export interface Bootstrap {
   version: string;
+  /** Apps Script CODE_VERSION. Absent on deployments older than v10. */
+  codeVersion?: number;
   settings: Settings;
   members: Member[];
   spots: Spot[];

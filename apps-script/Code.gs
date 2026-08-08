@@ -8,6 +8,17 @@
  * Run setupSheet() once before the first deployment — see setup.gs.
  */
 
+/**
+ * Bumped whenever this file changes in a way the app depends on.
+ *
+ * Pasting the code into the editor is not the same as deploying it: without
+ * Bereitstellen → Neue Version the web app keeps serving the old code, which
+ * has now caused three rounds of "my changes aren't being accepted". The
+ * bootstrap returns this number so the app can say so out loud, and
+ * verifyInstall() compares it against what setup.gs expects.
+ */
+var CODE_VERSION = 10;
+
 var SHEETS = {
   settings: 'Settings',
   spots: 'Surf Spots',
@@ -145,6 +156,7 @@ function bootstrap_() {
   var ss = SpreadsheetApp.getActive();
   return {
     version: new Date().toISOString(),
+    codeVersion: CODE_VERSION,
     settings: readSettings_(ss),
     members: readMembers_(ss),
     spots: readSpots_(ss),
