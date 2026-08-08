@@ -30,6 +30,8 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const [until, setUntil] = useState(defaultUntil(trip, ride, reservation));
   const [origin, setOrigin] = useState(trip?.origin || 'Quinta');
   const [boards, setBoards] = useState(!!trip?.boards);
+  // Names an odometer or manual trip so it isn't a blank row in the log.
+  const [label, setLabel] = useState(trip && !trip.destination ? '' : '');
   const [destinationValue, setDestinationValue] = useState<DestinationValue>({
     place: trip?.destination ?? '',
     activity: trip?.activity ?? '',
@@ -81,7 +83,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       )
     : null;
 
-  const destination = mode === 'spot' ? destinationValue.place : notes.trim() || 'Other';
+  const destination = mode === 'spot' ? destinationValue.place : label.trim();
   const canSave = distanceKm > 0 && !saving;
 
   const save = async () => {
@@ -92,7 +94,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       date: new Date(from).toISOString(),
       until: until ? new Date(until).toISOString() : '',
       driver: me,
-      destination: mode === 'spot' ? destinationValue.place : '',
+      destination,
       activity: mode === 'spot' ? destinationValue.activity : '',
       manualKm: mode === 'manual' ? numOrNull(manualKm) : null,
       odoStart: mode === 'odometer' ? numOrNull(odoStart) : null,
@@ -222,6 +224,18 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
             inputMode="decimal"
             value={manualKm}
             onInput={(e) => setManualKm((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      )}
+
+      {mode !== 'spot' && (
+        <label class="field">
+          <span>Where did you go?</span>
+          <input
+            type="text"
+            value={label}
+            placeholder="optional"
+            onInput={(e) => setLabel((e.target as HTMLInputElement).value)}
           />
         </label>
       )}

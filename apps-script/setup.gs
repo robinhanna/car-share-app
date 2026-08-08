@@ -621,14 +621,20 @@ function writeDistanceFormulas_(sheet, lastRow, sep) {
     // covered the return leg even though the passenger didn't.
     var direction = '*IF(AND($O' + r + '="One-way"' + sep + '$U' + r + '<>"Yes")' +
       sep + '1' + sep + '2)';
+
+    // Manual km is checked before the destination. It used to be nested inside
+    // the "has a destination" branch, so typing a distance with no place named
+    // — the whole point of the "Just km" option — produced an empty row that
+    // the sheet priced at zero.
     formulas.push([
       '=IF(AND($R' + r + '=""' + sep + '$S' + r + '="")' + sep +
-        'IF($C' + r + '=""' + sep + '""' + sep +
-          "IFERROR(INDEX('Surf Spots'!$C$3:$C$55" + sep + "MATCH($C" + r +
-            sep + "'Surf Spots'!$B$3:$B$55" + sep + '0))' + direction + sep +
-          'IFERROR(INDEX(Places!$C$3:$C$200' + sep + 'MATCH($C' + r +
-            sep + 'Places!$B$3:$B$200' + sep + '0))' + direction + sep +
-          'IF($D' + r + '=""' + sep + '""' + sep + '$D' + r + '))))' + sep +
+        'IF($D' + r + '<>""' + sep + '$D' + r + sep +
+          'IF($C' + r + '=""' + sep + '""' + sep +
+            "IFERROR(INDEX('Surf Spots'!$C$3:$C$55" + sep + "MATCH($C" + r +
+              sep + "'Surf Spots'!$B$3:$B$55" + sep + '0))' + direction + sep +
+            'IFERROR(INDEX(Places!$C$3:$C$200' + sep + 'MATCH($C' + r +
+              sep + 'Places!$B$3:$B$200' + sep + '0))' + direction + sep +
+            '""))))' + sep +
         '$S' + r + '-$R' + r + ')',
     ]);
   }
@@ -733,10 +739,24 @@ function checkSheetHealth_(ss) {
   var checked = 0;
 
   if (last >= FIRST_DATA_ROW) {
-    var rows = trips.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.perPerson).getValues();
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.boards).getValues();
     for (var i = 0; i < rows.length; i++) {
       var distance = num_(rows[i][TRIP.distance - 1]);
-      if (distance <= 0) continue;
+
+      // A logged trip with no distance at all is the louder failure: it means
+      // something was entered that the sheet couldn't turn into kilometres.
+      // Skipping these is how the broken "Just km" formula went unnoticed.
+      if (distance <= 0) {
+        var driver = String(rows[i][TRIP.driver - 1]).trim();
+        var hasInput = String(rows[i][TRIP.destination - 1]).trim() !== '' ||
+          num_(rows[i][TRIP.manualKm - 1]) > 0 ||
+          num_(rows[i][TRIP.odoEnd - 1]) > 0;
+        if (driver && hasInput) {
+          problems.push('row ' + (FIRST_DATA_ROW + i) + ': ' + driver +
+            ' logged a trip but it works out at 0 km');
+        }
+        continue;
+      }
       checked++;
 
       var fuel = num_(rows[i][TRIP.fuel - 1]);
