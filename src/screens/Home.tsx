@@ -99,10 +99,33 @@ export function Home({ me, onNavigate }: Props) {
       })),
   ].sort((a, b) => a.when.localeCompare(b.when));
 
-  // A lift whose pickup time has passed isn't "coming up" any more — it's
-  // waiting to be logged. The backend logs these itself two hours on, but
-  // whoever drove shouldn't have to wait for that if they're looking now.
-  const overdue: Booking[] = rides
+  // Anything the car has already done that nobody has written down yet —
+  // finished bookings and lifts whose pickup time has passed. One list rather
+  // than two, because two sections both asking you to log something is how one
+  // of them gets ignored.
+  //
+  // A finished booking appears the moment its end time passes, so the driver can
+  // check the details while the drive is still fresh, fix what's wrong, and log
+  // it — rather than starting from a blank form later and retyping what the
+  // booking already knew.
+  const overdue: Booking[] = [
+    ...reservations
+      .filter((r) => new Date(r.end).getTime() <= now)
+      .map((r) => ({
+        id: r.id,
+        driver: r.driver,
+        passenger: '',
+        what: r.destination,
+        when: `${timeLabel(r.start)} – ${timeLabel(r.end)}`,
+        lift: false,
+        riders: r.riders,
+        reservation: r,
+        onLog: (go: (route: Route) => void) =>
+          go({ name: 'log', reservationId: r.id, reservation: r }),
+        onCancel: () => void queueOp('cancelReservation', { id: r.id }),
+        onJoin: (join: boolean) => void queueOp('joinReservation', { id: r.id, name: me, join }),
+      })),
+    ...rides
     .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() <= now)
     .map((r) => ({
       id: r.id,
@@ -115,7 +138,8 @@ export function Home({ me, onNavigate }: Props) {
       onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
       onCancel: () => void queueOp('cancelRide', { id: r.id }),
       onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
-    }));
+    })),
+  ].sort((a, b) => a.when.localeCompare(b.when));
 
   const recent = [...(bootstrap?.recentTrips ?? [])]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -144,6 +168,26 @@ export function Home({ me, onNavigate }: Props) {
         <div class="card-head">
           <p class="eyebrow">The car</p>
           <span class="row-actions">
+            {/* Someone is most likely to want in while the car is actually
+                leaving, so the join button matters more here than on a booking
+                that's still hours away. */}
+            {active && active.driver !== me && (
+              <button
+                class="icon-btn icon-btn--join"
+                aria-pressed={active.riders.includes(me)}
+                aria-label={active.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                title={active.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                onClick={() =>
+                  void queueOp('joinReservation', {
+                    id: active.id,
+                    name: me,
+                    join: !active.riders.includes(me),
+                  })
+                }
+              >
+                {active.riders.includes(me) ? '−' : '+'}
+              </button>
+            )}
             {/* Plans fall through. Without this the car reads as taken until the
                 booking runs out, and the only way to release it was to find the
                 row in Coming up — which the active one has already left. */}
@@ -173,15 +217,23 @@ export function Home({ me, onNavigate }: Props) {
           </span>
         </div>
         {active ? (
-          <>
-            <p class="status-line">
-              {active.driver === me ? 'You have it' : `${active.driver} has it`}
-            </p>
-            <p class="muted">
-              until {timeLabel(active.end)}
-              {active.destination ? ` · ${active.destination}` : ''}
-            </p>
-          </>
+          // Tappable for the same reason the Coming up rows are: the driver goes
+          // to the form, everyone else to the read-only page.
+          <button class="row-btn card-btn" onClick={() => openBooking(active)}>
+            <span>
+              <p class="status-line">
+                {active.driver === me ? 'You have it' : `${active.driver} has it`}
+                {active.driver !== me && hasChanged(seen, active.id, active.updated) && (
+                  <span class="tag tag--alert">changed</span>
+                )}
+              </p>
+              <p class="muted">
+                until {timeLabel(active.end)}
+                {active.destination ? ` · ${active.destination}` : ''}
+              </p>
+            </span>
+            <span class="chev"> ›</span>
+          </button>
         ) : (
           <>
             <p class="status-line">Free right now</p>
@@ -309,12 +361,15 @@ export function Home({ me, onNavigate }: Props) {
             {overdue.map((b) => (
               <li key={b.id}>
                 <span>
-                  <strong>{b.driver}</strong> · {b.what}
-                  <span class="tag">lift</span>
+                  <strong>{b.driver}</strong>
+                  {b.what ? ` · ${b.what}` : ''}
+                  {b.lift && <span class="tag">lift</span>}
                   <br />
                   <span class="muted">{b.when}</span>
                 </span>
                 <span class="row-actions">
+                  {/* For a booking this opens the form already carrying its
+                      times, destination and riders — check, fix, log. */}
                   <button class="btn btn--inline" onClick={() => b.onLog(onNavigate)}>
                     Log it
                   </button>
@@ -322,7 +377,10 @@ export function Home({ me, onNavigate }: Props) {
                     class="icon-btn icon-btn--danger"
                     aria-label="Cancel"
                     onClick={() => {
-                      if (confirm('This lift never happened?')) b.onCancel();
+                      const q = b.lift
+                        ? 'This lift never happened?'
+                        : `Drop this ${b.what || 'booking'} without logging it?`;
+                      if (confirm(q)) b.onCancel();
                     }}
                   >
                     ✕
@@ -337,7 +395,7 @@ export function Home({ me, onNavigate }: Props) {
       {recent.length > 0 && (
         <>
           <div class="spacer" />
-          <p class="section-title">Recently logged</p>
+          <p class="section-title">Recent trips</p>
           <ul class="list">
             {recent.map((t) => (
               <li key={t.id}>

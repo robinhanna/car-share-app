@@ -10,6 +10,7 @@ import type {
   Op,
   Payment,
   PostResponse,
+  Reservation,
   Role,
   SettleUpPayload,
   RequestRidePayload,
@@ -74,6 +75,13 @@ let bootstrap: Bootstrap = {
     { category: 'Town', name: 'Burgau', oneWayKm: 3, notes: '' },
     { category: 'Town', name: 'Portimão', oneWayKm: 30, notes: '' },
     { category: 'Town', name: 'Faro', oneWayKm: 90, notes: 'Airport' },
+    // The road west towards Sagres — mirrors LATER_PLACES in setup.gs.
+    { category: 'Town', name: 'Figueira', oneWayKm: 5, notes: 'The village near Budens' },
+    { category: 'Town', name: 'Budens', oneWayKm: 6, notes: 'Shop, café' },
+    { category: 'Town', name: 'Boca do Rio', oneWayKm: 9, notes: 'Beach below Budens' },
+    { category: 'Town', name: 'Raposeira', oneWayKm: 11, notes: '' },
+    { category: 'Town', name: 'Praia do Barranco', oneWayKm: 18, notes: '' },
+    { category: 'Town', name: 'Praia das Furnas', oneWayKm: 19, notes: '' },
     { category: 'Activity', name: 'Groceries', oneWayKm: 0, notes: '' },
     { category: 'Activity', name: 'Party / night out', oneWayKm: 0, notes: '' },
     { category: 'Activity', name: 'Pharmacy', oneWayKm: 0, notes: '' },
@@ -285,6 +293,13 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
         rideRequests: bootstrap.rideRequests.map((r) =>
           r.id === t.rideRequestId ? { ...r, status: 'done' as const } : r,
         ),
+        // Mirrors completeTrip_ and tripMatchesReservation_: a linked booking
+        // closes only when the trip actually falls in its window, a day's grace
+        // either side. The mock ignored reservations entirely, so nothing that
+        // depends on a booking closing could be checked here.
+        reservations: bootstrap.reservations.filter(
+          (r) => !(r.id === t.reservationId && tripClosesBooking(t.date, r)),
+        ),
       };
     }
 
@@ -475,6 +490,14 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
     })),
     data: structuredClone(bootstrap),
   };
+}
+
+/** Mirrors tripMatchesReservation_ in Code.gs, grace window included. */
+function tripClosesBooking(tripDate: string, r: Reservation): boolean {
+  const GRACE = 24 * 3600_000;
+  const when = new Date(tripDate).getTime();
+  if (Number.isNaN(when)) return false;
+  return when >= new Date(r.start).getTime() - GRACE && when <= new Date(r.end).getTime() + GRACE;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));

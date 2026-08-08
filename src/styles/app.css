@@ -472,6 +472,20 @@ h1 + .spacer + .card {
   cursor: pointer;
 }
 
+/* .row-btn inside the status card: the chev centres rather than sitting on the
+   baseline of a 24px status line, and the text block keeps its own spacing. */
+.card-btn {
+  align-items: center;
+}
+
+.card-btn p {
+  margin: 0;
+}
+
+.card-btn .status-line {
+  margin-top: 4px;
+}
+
 .badge {
   min-width: 24px;
   padding: 2px 7px;

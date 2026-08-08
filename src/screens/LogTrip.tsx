@@ -2,6 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import type { Place, Reservation, RideRequest, Spot, Trip, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
 import { localDateTimeInput } from '../lib/dates';
+import { splitDestination } from '../lib/destination';
 import { queueOp, useApp } from '../state/store';
 import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
@@ -32,10 +33,16 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const [boards, setBoards] = useState(!!trip?.boards);
   // Names an odometer or manual trip so it isn't a blank row in the log.
   const [label, setLabel] = useState(trip && !trip.destination ? '' : '');
-  const [destinationValue, setDestinationValue] = useState<DestinationValue>({
-    place: trip?.destination ?? '',
-    activity: trip?.activity ?? '',
-  });
+  // A booking already recorded where it was going, and a lift knows where it
+  // dropped someone. Making the driver re-pick it defeats the point of logging
+  // from the booking at all — the form should be a check, not a re-entry.
+  const [destinationValue, setDestinationValue] = useState<DestinationValue>(
+    trip
+      ? { place: trip.destination, activity: trip.activity }
+      : reservation
+        ? splitDestination(reservation.destination)
+        : { place: ride?.to ?? '', activity: '' },
+  );
   const [tripType, setTripType] = useState<TripType>(trip?.tripType ?? 'Round trip');
   const [manualKm, setManualKm] = useState(
     trip && !trip.destination ? String(trip.distanceKm) : '',

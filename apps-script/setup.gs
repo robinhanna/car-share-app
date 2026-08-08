@@ -137,11 +137,55 @@ function setupPlaces_(ss) {
     ]);
   }
 
+  addMissingPlaces_(sheet);
+
   var category = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Town', 'Activity'], true)
     .setAllowInvalid(false)
     .build();
   sheet.getRange(FIRST_DATA_ROW, 1, 200, 1).setDataValidation(category);
+}
+
+/**
+ * Places added after the tab was first seeded.
+ *
+ * The seed block above only runs on creation, deliberately — it must never
+ * stamp over a distance Robin has corrected by hand. So anything added later
+ * goes here and is appended only if the name isn't already there, the same
+ * add-if-missing rule setupMemberRoster_ uses for people.
+ *
+ * Distances are one-way estimates from Almádena. Correct them in the sheet;
+ * a later setupSheet() run will leave your figure alone.
+ */
+var LATER_PLACES = [
+  ['Town', 'Figueira', 5, 'The village near Budens'],
+  ['Town', 'Budens', 6, 'Shop, café'],
+  ['Town', 'Boca do Rio', 9, 'Beach below Budens'],
+  ['Town', 'Raposeira', 11, ''],
+  ['Town', 'Praia do Barranco', 18, ''],
+  ['Town', 'Praia das Furnas', 19, ''],
+];
+
+function addMissingPlaces_(sheet) {
+  var last = sheet.getLastRow();
+  var existing = {};
+  if (last >= FIRST_DATA_ROW) {
+    sheet.getRange(FIRST_DATA_ROW, PLACE.name, last - 2, 1).getValues().forEach(function (r) {
+      var n = String(r[0]).trim();
+      if (n) existing[n.toLowerCase()] = true;
+    });
+  }
+
+  var added = [];
+  LATER_PLACES.forEach(function (p) {
+    if (existing[String(p[1]).toLowerCase()]) return;
+    var row = firstEmptyRow_(sheet, PLACE.name);
+    sheet.getRange(row, 1, 1, 4).setValues([p]);
+    existing[String(p[1]).toLowerCase()] = true;
+    added.push(p[1]);
+  });
+
+  if (added.length) Logger.log('Added ' + added.length + ' place(s): ' + added.join(', '));
 }
 
 function setupPayments_(ss) {
@@ -859,7 +903,7 @@ function verifyInstall() {
     'migrateConfig_', 'memberRows_', 'migrateMembersTotals_', 'setupMemberRoster_',
     'setupMembers_', 'setFormulaVerified_', 'setupTripLog_', 'applyDistanceFormulas_',
     'writeDistanceFormulas_', 'writeFuelFormulas_', 'assertNoDecimalLiterals_',
-    'checkSheetHealth_', 'correctSeededPrepayment_', 'findProbeRow_', 'probeLooksRight_',
+    'checkSheetHealth_', 'correctSeededPrepayment_', 'addMissingPlaces_', 'findProbeRow_', 'probeLooksRight_',
     'ensureToken_', 'showToken', 'diagnoseTripLog', 'verifyInstall',
   ];
 

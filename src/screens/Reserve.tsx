@@ -3,6 +3,7 @@ import { newClientId } from '../api/client';
 import type { Reservation } from '../api/types';
 import { QUICK_DESTINATIONS, QUICK_DURATIONS } from '../config';
 import { localDateTimeInput } from '../lib/dates';
+import { joinDestination, splitDestination } from '../lib/destination';
 import { queueOp, useApp } from '../state/store';
 import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
@@ -72,7 +73,7 @@ export function Reserve({ me, reservation, onDone }: Props) {
       riders,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
-      destination: [destination.place, destination.activity].filter(Boolean).join(' · '),
+      destination: joinDestination(destination.place, destination.activity),
       notes,
     };
     if (reservation) {
@@ -195,17 +196,6 @@ function durationLabel(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
   const hours = minutes / 60;
   return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
-}
-
-/**
- * The reverse of the join in save(): a destination is stored as "place · activity".
- * Splitting on the first separator only, since an activity never contains one but
- * a place name conceivably could.
- */
-function splitDestination(stored: string): DestinationValue {
-  const at = stored.indexOf(' · ');
-  if (at === -1) return { place: stored, activity: '' };
-  return { place: stored.slice(0, at), activity: stored.slice(at + 3) };
 }
 
 /** Rounded to the next half hour, in the phone's own timezone. */
