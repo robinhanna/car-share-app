@@ -29,18 +29,18 @@ const consumption = 6.0;
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
   settings: {
-    totalCost: 395,
+    totalCost: 405,
     rentalCost: 375,
-    extras: 20,
+    extras: 30,
     monthStart: '2026-08-07T00:00:00.000Z',
     monthEnd: '2026-08-31T00:00:00.000Z',
     totalMemberDays: 75,
-    dailyRate: 395 / 75,
+    dailyRate: 405 / 75,
     fuelPrice,
     consumption,
     costPerKm: (fuelPrice * consumption) / 100,
     riderDays: 1.5,
-    dayRate: 395 / 76.5,
+    dayRate: 405 / 76.5,
   },
   members: [
     member('Robin', true, 25, 3),
@@ -84,7 +84,7 @@ let bootstrap: Bootstrap = {
       date: '2026-08-07',
       name: 'Robin',
       type: 'prepayment',
-      amount: 395,
+      amount: 405,
       note: 'Rental and pickup paid upfront',
     },
   ],
@@ -128,7 +128,7 @@ function member(
   role: Role = 'Driver',
   rideDays = 0,
 ): Member {
-  const rate = 395 / 76.5;
+  const rate = 405 / 76.5;
   const carCharge = (included ? daysActive : rideDays) * rate;
   return {
     name,

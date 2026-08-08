@@ -33,6 +33,7 @@ function setupSheet() {
   var token = ensureToken_();
 
   SpreadsheetApp.flush();
+  checkSheetHealth_(ss);
   var summary = rebuildRideDays_(ss);
   Logger.log('Day rate: €' + summary.dayRate.toFixed(4) + ' (' + summary.memberDays +
     ' member-days + ' + summary.riderDays + ' rider-days)');
@@ -222,6 +223,16 @@ function setupSettings_(ss) {
   s.getRange('B14:B15').setNumberFormat('€#,##0.00');
   if (String(s.getRange('B12').getValue()).trim() === '') s.getRange('B12').setValue(0);
   if (String(s.getRange('B14').getValue()).trim() === '') s.getRange('B14').setValue(0);
+
+  // How much more fuel a loaded car burns. Held as values, not baked into the
+  // formula: setValue writes a real number whatever the sheet's locale, while a
+  // decimal typed into a formula string does not survive a comma-decimal one.
+  s.getRange('A16').setValue('Fuel: extra per passenger');
+  s.getRange('A17').setValue('Fuel: extra with boards');
+  s.getRange('A18').setValue('Fuel: most it can add');
+  if (String(s.getRange('B16').getValue()).trim() === '') s.getRange('B16').setValue(0.03);
+  if (String(s.getRange('B17').getValue()).trim() === '') s.getRange('B17').setValue(0.08);
+  if (String(s.getRange('B18').getValue()).trim() === '') s.getRange('B18').setValue(1.25);
 }
 
 /**
@@ -230,7 +241,7 @@ function setupSettings_(ss) {
  * the Sheet is the source of truth again and Robin can edit any of it without
  * a later setupSheet() run stamping over him.
  */
-var CONFIG_VERSION = 4;
+var CONFIG_VERSION = 5;
 
 function migrateConfig_(ss) {
   var props = PropertiesService.getScriptProperties();
@@ -244,7 +255,7 @@ function migrateConfig_(ss) {
   s.getRange('B3').setValue(375);                       // 25 days at €15
   s.getRange('B4').setValue(new Date(2026, 7, 7));      // 7 August
   s.getRange('B5').setValue(new Date(2026, 7, 31));     // 31 August
-  s.getRange('B14').setValue(20);                       // Uber to collect the car
+  s.getRange('B14').setValue(30);                       // Uber to collect the car
 
   // 7.5 L/100km was a guess from before anyone had driven the car. Robin's tank
   // reading — 224 km on just over a quarter — works out around 5.6 on a mostly
@@ -273,7 +284,7 @@ function migrateConfig_(ss) {
   correctSeededPrepayment_(ss);
 
   props.setProperty('configVersion', String(CONFIG_VERSION));
-  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 7-31 Aug, €375 + €20 pickup = €395.');
+  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 7-31 Aug, €375 + €30 pickup = €405.');
 }
 
 function correctSeededPrepayment_(ss) {
@@ -495,7 +506,23 @@ function setupMembers_(ss) {
  * column the first time round. Semicolons first, since we know which way this
  * sheet leans.
  */
+/**
+ * A decimal typed into a formula string does not survive a sheet whose locale
+ * uses the comma as its decimal separator — and wrapped in IFERROR it fails
+ * silently as a zero. Constants belong in cells, referenced by address.
+ */
+function assertNoDecimalLiterals_(formula) {
+  // Cell references like $B$18 and ranges like A3:E200 are fine; a bare 0.03
+  // is not.
+  var stripped = String(formula).replace(/\$?[A-Z]+\$?\d+/g, '');
+  if (/\d+\.\d+/.test(stripped)) {
+    throw new Error('Formula contains a decimal literal, which breaks in this ' +
+      'sheet\'s locale — put the constant in a Settings cell instead: ' + formula);
+  }
+}
+
 function setFormulaVerified_(range, semicolonFormula) {
+  assertNoDecimalLiterals_(semicolonFormula);
   range.setFormula(semicolonFormula);
   SpreadsheetApp.flush();
   var v = range.getValue();
@@ -628,7 +655,15 @@ function writeFuelFormulas_(sheet, lastRow) {
     // excludes the driver — but the car still carried them, so add them back
     // before working out how loaded it was.
     var onboard = '($J' + r + '+IF($U' + r + '="Yes";1;0))';
-    var load = 'MIN(1.25;1+0.03*MAX(' + onboard + '-1;0)+0.08*IF($X' + r + '="Yes";1;0))';
+
+    // The load constants live in Settings rather than being written into the
+    // formula. A decimal literal like 0.03 does not parse in a sheet whose
+    // locale uses the comma as the decimal separator — and because this whole
+    // expression sits inside IFERROR(...;0), that failure showed up as every
+    // trip costing €0.00 rather than as an error anyone could see.
+    var load = 'MIN(Settings!$B$18;1+Settings!$B$16*MAX(' + onboard + '-1;0)' +
+      '+Settings!$B$17*IF($X' + r + '="Yes";1;0))';
+
     setFormulaVerified_(sheet.getRange(r, TRIP.fuel),
       '=IF($E' + r + '="";"";IFERROR($E' + r + '*Settings!$B$11*' + load + ';0))');
   }
@@ -678,6 +713,66 @@ function ensureToken_() {
     props.setProperty('APP_TOKEN', token);
   }
   return token;
+}
+
+/**
+ * Reads back what the sheet actually computed and complains if it looks wrong.
+ *
+ * Worth having because the failure that prompted it was invisible: a formula
+ * that couldn't parse returned its IFERROR fallback of 0, so every trip quietly
+ * cost €0.00 and nothing anywhere said "error". A formula that writes without
+ * throwing is not the same as a formula that works, so this checks the numbers
+ * rather than the writing of them.
+ */
+function checkSheetHealth_(ss) {
+  ss = ss || SpreadsheetApp.getActive();
+  var problems = [];
+
+  var trips = ss.getSheetByName(SHEETS.trips);
+  var last = trips.getLastRow();
+  var checked = 0;
+
+  if (last >= FIRST_DATA_ROW) {
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.perPerson).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      var distance = num_(rows[i][TRIP.distance - 1]);
+      if (distance <= 0) continue;
+      checked++;
+
+      var fuel = num_(rows[i][TRIP.fuel - 1]);
+      var total = num_(rows[i][TRIP.total - 1]);
+      var perPerson = num_(rows[i][TRIP.perPerson - 1]);
+      var row = FIRST_DATA_ROW + i;
+
+      if (fuel <= 0) {
+        problems.push('row ' + row + ': ' + distance + ' km but fuel reads €0.00');
+      }
+      if (total <= 0) {
+        problems.push('row ' + row + ': trip total reads €0.00');
+      }
+      if (perPerson <= 0) {
+        problems.push('row ' + row + ': cost per person reads €0.00');
+      }
+      if (problems.length > 4) break;
+    }
+  }
+
+  // The Members check row is the sheet's own assertion that every charge adds
+  // back up to the total to split.
+  var members = ss.getSheetByName(SHEETS.members);
+  var check = num_(members.getRange(memberRows_().check, MEMBER.share).getValue());
+  if (Math.abs(check) > 0.02) {
+    problems.push('Members check row reads ' + check.toFixed(2) + ', expected 0.00');
+  }
+
+  if (problems.length) {
+    Logger.log('SHEET HEALTH: FAILED');
+    problems.forEach(function (p) { Logger.log('  - ' + p); });
+    Logger.log('  Send these lines to Claude — the sheet is not calculating correctly.');
+  } else {
+    Logger.log('Sheet health: OK (' + checked + ' priced trip(s), split balances to 0.00).');
+  }
+  return problems;
 }
 
 /** Prints the token again if you lose it. */
