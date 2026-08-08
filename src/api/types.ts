@@ -161,6 +161,8 @@ export type OpName =
   | 'requestRide'
   | 'claimRide'
   | 'cancelRide'
+  | 'joinReservation'
+  | 'joinRide'
   | 'logRide'
   | 'editTrip'
   | 'deleteTrip'
@@ -185,6 +187,12 @@ export interface CompleteTripPayload {
   origin: string;
   boards: boolean;
   until: string;
+}
+
+export interface JoinPayload {
+  id: string;
+  name: string;
+  join: boolean;
 }
 
 export interface LogRidePayload {
@@ -273,6 +281,7 @@ export type OpPayload =
   | RequestRidePayload
   | ClaimRidePayload
   | CancelRidePayload
+  | JoinPayload
   | LogRidePayload
   | EditTripPayload
   | DeleteTripPayload

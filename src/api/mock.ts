@@ -15,6 +15,7 @@ import type {
   LogRidePayload,
   DeleteTripPayload,
   EditTripPayload,
+  JoinPayload,
 } from './types';
 
 /**
@@ -340,6 +341,23 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
       };
     }
 
+    if (op.op === 'joinReservation' || op.op === 'joinRide') {
+      const { id, name, join } = op.payload as JoinPayload;
+      const toggle = (list: string[]) => {
+        const without = list.filter((n) => n !== name);
+        return join ? [...without, name] : without;
+      };
+      bootstrap = {
+        ...bootstrap,
+        reservations: bootstrap.reservations.map((r) =>
+          r.id === id ? { ...r, riders: toggle(r.riders) } : r,
+        ),
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === id ? { ...r, others: toggle(r.others) } : r,
+        ),
+      };
+    }
+
     if (op.op === 'claimRide') {
       const { id, driver } = op.payload as ClaimRidePayload;
       const action = bootstrap.karmaActions.find((a) => /dr(o|i)ve|lift|taxi/i.test(a.action));
@@ -362,6 +380,23 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
           ...bootstrap.rideRequests,
           { ...r, created: new Date().toISOString(), status: 'open', driver: '', tripId: '' },
         ],
+      };
+    }
+
+    if (op.op === 'joinReservation' || op.op === 'joinRide') {
+      const { id, name, join } = op.payload as JoinPayload;
+      const toggle = (list: string[]) => {
+        const without = list.filter((n) => n !== name);
+        return join ? [...without, name] : without;
+      };
+      bootstrap = {
+        ...bootstrap,
+        reservations: bootstrap.reservations.map((r) =>
+          r.id === id ? { ...r, riders: toggle(r.riders) } : r,
+        ),
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === id ? { ...r, others: toggle(r.others) } : r,
+        ),
       };
     }
 

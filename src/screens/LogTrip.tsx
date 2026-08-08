@@ -43,8 +43,16 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const [odoStart, setOdoStart] = useState('');
   const [odoEnd, setOdoEnd] = useState('');
   const [riders, setRiders] = useState<string[]>(
-    trip ? trip.riders : ride ? [ride.passenger, ...ride.others] : [],
+    trip
+      ? trip.riders
+      : ride
+        ? [ride.passenger, ...ride.others]
+        : // Anyone who tapped "add me" on the booking is already in the car.
+          (reservation?.riders ?? []),
   );
+  // Kept in state so it can be unlinked: saving should never quietly close a
+  // booking you didn't mean to close.
+  const [linkedReservation, setLinkedReservation] = useState(reservationId ?? '');
   const [taxi, setTaxi] = useState(trip ? trip.taxi : !!ride);
   const [tolls, setTolls] = useState(trip?.tolls ? String(trip.tolls) : '');
   const [parking, setParking] = useState(trip?.parking ? String(trip.parking) : '');
@@ -114,7 +122,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
     } else {
       await queueOp('completeTrip', {
         ...common,
-        reservationId: reservationId ?? '',
+        reservationId: linkedReservation,
         rideRequestId: ride?.id ?? '',
       });
     }
@@ -126,6 +134,23 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       <p class="kicker">{trip ? 'Correcting' : 'Trip'}</p>
       <h1>{trip ? 'Edit this trip' : 'Log a trip'}</h1>
       <div class="spacer" />
+
+      {linkedReservation && reservation && (
+        <div class="banner banner--pending">
+          <span>
+            Saving this closes {reservation.driver === me ? 'your' : `${reservation.driver}'s`}{' '}
+            {reservation.destination || 'booking'}
+          </span>
+          <button
+            class="icon-btn"
+            aria-label="Don't close the booking"
+            style="margin-left:auto"
+            onClick={() => setLinkedReservation('')}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <label class="field">
         <span>From</span>

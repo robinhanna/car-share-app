@@ -12,8 +12,10 @@ interface Booking {
   what: string;
   when: string;
   lift: boolean;
+  riders: string[];
   onLog: (go: (route: Route) => void) => void;
   onCancel: () => void;
+  onJoin: (join: boolean) => void;
 }
 
 interface Props {
@@ -45,8 +47,11 @@ export function Home({ me, onNavigate }: Props) {
       what: r.destination,
       when: `${timeLabel(r.start)} – ${timeLabel(r.end)}`,
       lift: false,
-      onLog: (go: (route: Route) => void) => go({ name: 'log', reservationId: r.id }),
+      riders: r.riders,
+      onLog: (go: (route: Route) => void) =>
+        go({ name: 'log', reservationId: r.id, reservation: r }),
       onCancel: () => void queueOp('cancelReservation', { id: r.id }),
+      onJoin: (join: boolean) => void queueOp('joinReservation', { id: r.id, name: me, join }),
     })),
     ...rides
       .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() > now)
@@ -57,9 +62,11 @@ export function Home({ me, onNavigate }: Props) {
         what: [r.passenger, r.to].filter(Boolean).join(' → '),
         when: timeLabel(r.when),
         lift: true,
+        riders: r.others,
         // Logging a lift needs no form: the request already knows everything.
         onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
         onCancel: () => void queueOp('cancelRide', { id: r.id }),
+        onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
       })),
   ].sort((a, b) => a.when.localeCompare(b.when));
 
@@ -75,8 +82,10 @@ export function Home({ me, onNavigate }: Props) {
       what: [r.passenger, r.to].filter(Boolean).join(' → '),
       when: timeLabel(r.when),
       lift: true,
+      riders: r.others,
       onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
       onCancel: () => void queueOp('cancelRide', { id: r.id }),
+      onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
     }));
 
   const recent = [...(bootstrap?.recentTrips ?? [])]
@@ -139,7 +148,10 @@ export function Home({ me, onNavigate }: Props) {
       </div>
 
       <div class="btn-stack">
-        <button class="btn" onClick={() => onNavigate({ name: 'log', reservationId: active?.driver === me ? active.id : undefined })}>
+        {/* No implicit reservation here. Attaching whatever booking happened
+            to be running meant logging a forgotten trip from yesterday closed
+            today's booking. You link a reservation by tapping Log trip on it. */}
+        <button class="btn" onClick={() => onNavigate({ name: 'log' })}>
           Log a trip
         </button>
         <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'reserve' })}>
@@ -179,6 +191,18 @@ export function Home({ me, onNavigate }: Props) {
                 </span>
 
                 <span class="row-actions">
+                  {/* Hop on someone else's booking. Meaningless on your own,
+                      so it isn't shown there. */}
+                  {b.driver !== me && b.passenger !== me && (
+                    <button
+                      class={`icon-btn ${b.riders.includes(me) ? 'icon-btn--on' : ''}`}
+                      aria-label={b.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                      title={b.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                      onClick={() => b.onJoin(!b.riders.includes(me))}
+                    >
+                      {b.riders.includes(me) ? '👤−' : '👤+'}
+                    </button>
+                  )}
                   {b.driver === me && (
                     <button
                       class="btn btn--inline btn--secondary"

@@ -485,6 +485,21 @@ h1 + .spacer + .card {
   flex: none;
 }
 
+/* .icon-btn is nudged up for the card header; inside a row it shouldn't be. */
+.row-actions .icon-btn {
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* "You're on this trip" — filled so it reads as an active state at a glance. */
+.icon-btn--on {
+  background: var(--teal);
+  border-color: var(--teal);
+  font-weight: 700;
+}
+
 .icon-btn--danger {
   width: 36px;
   height: 36px;

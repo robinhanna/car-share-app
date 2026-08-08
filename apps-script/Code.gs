@@ -129,6 +129,8 @@ function applyOp_(op) {
     case 'requestRide': return requestRide_(op.clientId, op.payload || {});
     case 'claimRide': return claimRide_(op.payload || {});
     case 'cancelRide': return cancelRide_(op.payload || {});
+    case 'joinReservation': return joinReservation_(op.payload || {});
+    case 'joinRide': return joinRide_(op.payload || {});
     case 'logRide': return logRide_(op.clientId, op.payload || {});
     case 'editTrip': return editTrip_(op.payload || {});
     case 'deleteTrip': return deleteTrip_(op.payload || {});
@@ -450,12 +452,26 @@ function completeTrip_(clientId, p) {
   sheet.getRange(row, TRIP.boards).setValue(p.boards ? 'Yes' : 'No');
   sheet.getRange(row, TRIP.until).setValue(p.until ? new Date(p.until) : '');
 
-  if (p.reservationId) closeReservation_(ss, p.reservationId, 'completed', tripId);
+  var when = p.date ? new Date(p.date) : new Date();
+
+  // A reservation is only closed when the trip actually falls in its window.
+  // Without this check, logging a forgotten trip from yesterday would close a
+  // booking for today — which is exactly what happened to Robin's Odeceixe
+  // reservation.
+  var closedReservation = false;
+  if (p.reservationId) {
+    if (tripMatchesReservation_(ss, p.reservationId, when)) {
+      closeReservation_(ss, p.reservationId, 'completed', tripId);
+      closedReservation = true;
+    } else {
+      Logger.log('Trip ' + tripId + ' left reservation ' + p.reservationId +
+        ' open — the dates do not line up.');
+    }
+  }
   if (p.rideRequestId) closeRideRequest_(ss, p.rideRequestId, 'done', '', tripId);
 
   // The driver fronted the tolls and parking, so credit them — otherwise they
   // are charged a share of money they have already spent.
-  var when = p.date ? new Date(p.date) : new Date();
   if (num_(p.tolls) > 0) {
     writePayment_(ss, clientId + ':tolls', when, p.driver, 'tolls', num_(p.tolls), 'Trip ' + tripId);
   }
@@ -468,6 +484,7 @@ function completeTrip_(clientId, p) {
   return {
     row: row,
     tripId: tripId,
+    closedReservation: closedReservation,
     distanceKm: num_(sheet.getRange(row, TRIP.distance).getValue()),
     fuelCost: num_(sheet.getRange(row, TRIP.fuel).getValue()),
     total: num_(sheet.getRange(row, TRIP.total).getValue()),
@@ -504,6 +521,77 @@ function cancelReservation_(p) {
   var found = closeReservation_(ss, p.id, 'cancelled', '');
   if (!found) throw new Error('Reservation not found: ' + p.id);
   return { id: p.id, status: 'cancelled' };
+}
+
+/**
+ * Adding or removing yourself from someone else's booking.
+ *
+ * No cost follows from this — nobody is charged until a trip is actually
+ * logged — so there's no ride-day rebuild. What it buys is that the driver
+ * finds you already in the car when they come to log it.
+ */
+function joinReservation_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.reservations);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) throw new Error('Reservation not found: ' + p.id);
+
+  var ids = sheet.getRange(FIRST_DATA_ROW, RES.id, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(p.id)) continue;
+    var row = FIRST_DATA_ROW + i;
+    var riders = toggleName_(splitList_(sheet.getRange(row, RES.riders).getValue()), p.name, p.join);
+    sheet.getRange(row, RES.riders).setValue(riders.join(', '));
+    return { id: p.id, riders: riders };
+  }
+  throw new Error('Reservation not found: ' + p.id);
+}
+
+function joinRide_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var row = findRideRequest_(sheet, p.id);
+  if (!row) throw new Error('Ride request not found: ' + p.id);
+
+  var others = toggleName_(splitList_(sheet.getRange(row, RIDE_REQ.others).getValue()), p.name, p.join);
+  sheet.getRange(row, RIDE_REQ.others).setValue(others.join(', '));
+  return { id: p.id, others: others };
+}
+
+/** Idempotent either way: joining twice adds one name, leaving twice is fine. */
+function toggleName_(names, name, join) {
+  var clean = String(name || '').trim();
+  if (!clean) return names;
+  var without = names.filter(function (n) { return n !== clean; });
+  return join ? without.concat([clean]) : without;
+}
+
+/**
+ * Does this trip plausibly belong to that booking?
+ *
+ * A day's grace either side, because people log trips late and a booking that
+ * ran until midnight is often written up the next morning. Beyond that the two
+ * are unrelated and the booking should survive.
+ */
+var RESERVATION_GRACE_MS = 24 * 60 * 60 * 1000;
+
+function tripMatchesReservation_(ss, reservationId, tripStart) {
+  var sheet = ss.getSheetByName(SHEETS.reservations);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return false;
+
+  var ids = sheet.getRange(FIRST_DATA_ROW, RES.id, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(reservationId)) continue;
+    var row = FIRST_DATA_ROW + i;
+    var start = sheet.getRange(row, RES.start).getValue();
+    var end = sheet.getRange(row, RES.end).getValue();
+    if (!(start instanceof Date) || !(end instanceof Date)) return true; // no window to judge by
+    var t = tripStart.getTime();
+    return t >= start.getTime() - RESERVATION_GRACE_MS &&
+      t <= end.getTime() + RESERVATION_GRACE_MS;
+  }
+  return false;
 }
 
 function closeReservation_(ss, reservationId, status, tripId) {
