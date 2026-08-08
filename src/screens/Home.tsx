@@ -114,16 +114,34 @@ export function Home({ me, onNavigate }: Props) {
       <div class="card card--status">
         <div class="card-head">
           <p class="eyebrow">The car</p>
-          {/* Pull-to-refresh can't fire once the app is installed to the home
-              screen, so the gesture needs a button behind it. */}
-          <button
-            class="icon-btn"
-            aria-label="Refresh"
-            disabled={syncing}
-            onClick={() => void sync()}
-          >
-            {syncing ? '…' : '↻'}
-          </button>
+          <span class="row-actions">
+            {/* Plans fall through. Without this the car reads as taken until the
+                booking runs out, and the only way to release it was to find the
+                row in Coming up — which the active one has already left. */}
+            {active && active.driver === me && (
+              <button
+                class="icon-btn icon-btn--danger"
+                aria-label="Cancel this booking"
+                onClick={() => {
+                  if (confirm(`Cancel your ${active.destination || 'booking'}? The car shows as free again.`)) {
+                    void queueOp('cancelReservation', { id: active.id });
+                  }
+                }}
+              >
+                ✕
+              </button>
+            )}
+            {/* Pull-to-refresh can't fire once the app is installed to the home
+                screen, so the gesture needs a button behind it. */}
+            <button
+              class="icon-btn"
+              aria-label="Refresh"
+              disabled={syncing}
+              onClick={() => void sync()}
+            >
+              {syncing ? '…' : '↻'}
+            </button>
+          </span>
         </div>
         {active ? (
           <>
