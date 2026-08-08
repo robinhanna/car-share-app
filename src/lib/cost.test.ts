@@ -77,6 +77,7 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
   origin: 'Quinta',
   boards: false,
   rideRequestId: '',
+  until: '',
   ...over,
 });
 

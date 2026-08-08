@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { RideRequest, Trip } from './api/types';
+import type { Reservation, RideRequest, Trip } from './api/types';
 import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
 import { sync, useApp } from './state/store';
@@ -11,27 +11,38 @@ import { Me } from './screens/Me';
 import { PersonDetail } from './screens/PersonDetail';
 import { Reserve } from './screens/Reserve';
 import { Rides } from './screens/Rides';
+import { TripDetail } from './screens/TripDetail';
+import { TripLog } from './screens/TripLog';
 import { TripSummary } from './screens/TripSummary';
 
 export type Route =
   | { name: 'home' }
   | { name: 'reserve' }
-  | { name: 'log'; reservationId?: string; ride?: RideRequest; trip?: Trip }
+  | { name: 'log'; reservationId?: string; reservation?: Reservation; ride?: RideRequest; trip?: Trip }
   | { name: 'rides' }
   | { name: 'summary'; cost: TripCost; destination: string }
   | { name: 'karma' }
   | { name: 'balance' }
-  | { name: 'person'; person: string };
+  | { name: 'person'; person: string }
+  | { name: 'trips' }
+  | { name: 'trip'; trip: Trip };
 
 export function App() {
   const app = useApp();
   const [me, setMeState] = useState<string | null>(getMe());
-  const [route, setRoute] = useState<Route>({ name: 'home' });
+  // A stack rather than a single route: trip detail is reachable from Home, a
+  // person's ledger and the trip log, and Back has to return where it came
+  // from rather than to a hard-coded screen.
+  const [stack, setStack] = useState<Route[]>([{ name: 'home' }]);
+  const route = stack[stack.length - 1];
+  const go = (next: Route) => setStack((s) => [...s, next]);
+  const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+  const home = () => setStack([{ name: 'home' }]);
 
   const chooseMe = (name: string) => {
     setMe(name);
     setMeState(name);
-    setRoute({ name: 'home' });
+    home();
   };
 
   const switchMember = () => {
@@ -70,12 +81,7 @@ export function App() {
             Soul &amp; Surf · Aug 26
           </span>
         ) : (
-          <button
-            class="back"
-            onClick={() =>
-              setRoute(route.name === 'person' ? { name: 'balance' } : { name: 'home' })
-            }
-          >
+          <button class="back" onClick={back}>
             ← Back
           </button>
         )}
@@ -86,30 +92,46 @@ export function App() {
 
       <Banners />
 
-      {route.name === 'home' && <Home me={me} onNavigate={setRoute} />}
-      {route.name === 'reserve' && <Reserve me={me} onDone={() => setRoute({ name: 'home' })} />}
+      {route.name === 'home' && <Home me={me} onNavigate={go} />}
+      {route.name === 'reserve' && <Reserve me={me} onDone={home} />}
       {route.name === 'rides' && (
-        <Rides me={me} onDrive={(ride) => setRoute({ name: 'log', ride })} />
+        <Rides me={me} onDrive={(ride) => go({ name: 'log', ride })} />
       )}
       {route.name === 'log' && (
         <LogTrip
           me={me}
           reservationId={route.reservationId}
+          reservation={route.reservation}
           ride={route.ride}
           trip={route.trip}
-          onDone={(cost, destination) => setRoute({ name: 'summary', cost, destination })}
+          onDone={(cost, destination) => go({ name: 'summary', cost, destination })}
         />
       )}
       {route.name === 'summary' && (
         <TripSummary
           cost={route.cost}
           destination={route.destination}
-          onDone={() => setRoute({ name: 'home' })}
+          onDone={home}
         />
       )}
       {route.name === 'karma' && <Karma me={me} />}
-      {route.name === 'balance' && <Balance me={me} onOpenPerson={(name) => setRoute({ name: 'person', person: name })} />}
-      {route.name === 'person' && <PersonDetail name={route.person} me={me} />}
+      {route.name === 'balance' && <Balance me={me} onOpenPerson={(name) => go({ name: 'person', person: name })} />}
+      {route.name === 'person' && (
+        <PersonDetail
+          name={route.person}
+          me={me}
+          onOpenTrip={(trip) => go({ name: 'trip', trip })}
+        />
+      )}
+      {route.name === 'trips' && <TripLog onOpenTrip={(trip) => go({ name: 'trip', trip })} />}
+      {route.name === 'trip' && (
+        <TripDetail
+          trip={route.trip}
+          me={me}
+          onEdit={(trip) => go({ name: 'log', trip })}
+          onDeleted={back}
+        />
+      )}
     </main>
   );
 }

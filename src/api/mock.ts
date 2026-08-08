@@ -236,6 +236,7 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             origin: t.origin,
             boards: t.boards,
             rideRequestId: t.rideRequestId,
+            until: t.until,
           },
         ],
         rideRequests: bootstrap.rideRequests.map((r) =>
@@ -280,6 +281,7 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
                 origin: ride.from,
                 boards: false,
                 rideRequestId: ride.id,
+                until: date,
               },
             ],
             rideRequests: bootstrap.rideRequests.map((r) =>
@@ -324,6 +326,7 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             taxi: !!isTaxi,
             origin: e.origin,
             boards: e.boards,
+            until: e.until,
           };
         }),
       };

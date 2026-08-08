@@ -149,6 +149,9 @@ export function Home({ me, onNavigate }: Props) {
           Lifts
           {openRides > 0 && <span class="badge">{openRides}</span>}
         </button>
+        <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'trips' })}>
+          Trip log
+        </button>
         <button class="btn btn--secondary" onClick={() => onNavigate({ name: 'karma' })}>
           Karma
         </button>
@@ -244,14 +247,16 @@ export function Home({ me, onNavigate }: Props) {
           <ul class="list">
             {recent.map((t) => (
               <li key={t.id}>
-                <span>
-                  <strong>{t.destination || 'Trip'}</strong>
-                  {t.taxi ? <span class="tag">lift</span> : ''}
-                  <br />
-                  <span class="muted">
-                    {shortDate(t.date)} · {t.driver} · {km(t.distanceKm)} · {euro(t.total)}
+                <button class="row-btn" onClick={() => onNavigate({ name: 'trip', trip: t })}>
+                  <span>
+                    <strong>{t.destination || 'Trip'}</strong>
+                    {t.taxi ? <span class="tag">lift</span> : ''}
+                    <br />
+                    <span class="muted">
+                      {shortDate(t.date)} · {t.driver} · {km(t.distanceKm)} · {euro(t.total)}
+                    </span>
                   </span>
-                </span>
+                </button>
                 <span class="row-actions">
                   {/* Anyone can correct a trip — people mistype who was in the
                       car, and the fix should be as easy as the mistake. */}

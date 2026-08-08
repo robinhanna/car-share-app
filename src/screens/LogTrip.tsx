@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
-import type { Place, RideRequest, Spot, Trip, TripType } from '../api/types';
+import type { Place, Reservation, RideRequest, Spot, Trip, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
-import { clockTime, localDateInput } from '../lib/dates';
+import { localDateTimeInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
 import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
@@ -9,6 +9,7 @@ import { RiderPicker } from './RiderPicker';
 interface Props {
   me: string;
   reservationId?: string;
+  reservation?: Reservation;
   /** Set when this trip is fulfilling someone's ride request. */
   ride?: RideRequest;
   /** Set when correcting a trip that's already logged. */
@@ -18,18 +19,15 @@ interface Props {
 
 type Mode = 'spot' | 'odometer' | 'manual';
 
-export function LogTrip({ me, reservationId, ride, trip, onDone }: Props) {
+export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: Props) {
   const { bootstrap } = useApp();
   const spots = bootstrap?.spots ?? [];
   const places = bootstrap?.places ?? [];
   const settings = bootstrap?.settings;
 
-  // Editing an existing trip starts from what was logged; a new one from now.
-  const when = trip ? new Date(trip.date) : new Date();
-
   const [mode, setMode] = useState<Mode>(trip && !trip.destination ? 'manual' : 'spot');
-  const [date, setDate] = useState(localDateInput(when));
-  const [time, setTime] = useState(clockTime(when));
+  const [from, setFrom] = useState(defaultFrom(trip, ride, reservation));
+  const [until, setUntil] = useState(defaultUntil(trip, ride, reservation));
   const [origin, setOrigin] = useState(trip?.origin || 'Quinta');
   const [boards, setBoards] = useState(!!trip?.boards);
   const [destinationValue, setDestinationValue] = useState<DestinationValue>({
@@ -91,9 +89,8 @@ export function LogTrip({ me, reservationId, ride, trip, onDone }: Props) {
     setSaving(true);
 
     const common = {
-      // Keep the time of day so two trips on one date still read in order, but
-      // let the chosen day win — people log yesterday's drive over breakfast.
-      date: new Date(`${date}T${time}`).toISOString(),
+      date: new Date(from).toISOString(),
+      until: until ? new Date(until).toISOString() : '',
       driver: me,
       destination: mode === 'spot' ? destinationValue.place : '',
       activity: mode === 'spot' ? destinationValue.activity : '',
@@ -128,25 +125,23 @@ export function LogTrip({ me, reservationId, ride, trip, onDone }: Props) {
       <h1>{trip ? 'Edit this trip' : 'Log a trip'}</h1>
       <div class="spacer" />
 
-      <div class="row">
-        <label class="field">
-          <span>Date</span>
-          <input
-            type="date"
-            value={date}
-            max={localDateInput(new Date())}
-            onInput={(e) => setDate((e.target as HTMLInputElement).value)}
-          />
-        </label>
-        <label class="field">
-          <span>Time</span>
-          <input
-            type="time"
-            value={time}
-            onInput={(e) => setTime((e.target as HTMLInputElement).value)}
-          />
-        </label>
-      </div>
+      <label class="field">
+        <span>From</span>
+        <input
+          type="datetime-local"
+          value={from}
+          onInput={(e) => setFrom((e.target as HTMLInputElement).value)}
+        />
+      </label>
+
+      <label class="field">
+        <span>Until</span>
+        <input
+          type="datetime-local"
+          value={until}
+          onInput={(e) => setUntil((e.target as HTMLInputElement).value)}
+        />
+      </label>
 
       <label class="field">
         <span>Starting from</span>
@@ -313,6 +308,28 @@ export function LogTrip({ me, reservationId, ride, trip, onDone }: Props) {
       </button>
     </>
   );
+}
+
+/**
+ * A trip being logged has just happened, so it ends now and started a couple of
+ * hours ago — the opposite of Reserve, which looks forward. Copying Reserve's
+ * "next half hour" default would stamp every logged trip with a future time.
+ * Logging from a booking uses that booking's times instead.
+ */
+function defaultFrom(trip?: Trip, ride?: RideRequest, reservation?: Reservation): string {
+  if (trip) return localDateTimeInput(new Date(trip.date));
+  if (reservation) return localDateTimeInput(new Date(reservation.start));
+  if (ride) return localDateTimeInput(new Date(ride.when));
+  const d = new Date();
+  d.setHours(d.getHours() - 2);
+  return localDateTimeInput(d);
+}
+
+function defaultUntil(trip?: Trip, _ride?: RideRequest, reservation?: Reservation): string {
+  if (trip?.until) return localDateTimeInput(new Date(trip.until));
+  if (trip) return localDateTimeInput(new Date(trip.date));
+  if (reservation) return localDateTimeInput(new Date(reservation.end));
+  return localDateTimeInput(new Date());
 }
 
 /** Towns carry a one-way distance too, so they can drive the same maths. */

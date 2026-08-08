@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { Payment } from '../api/types';
+import type { Payment, Trip } from '../api/types';
 import { ADMIN_MEMBER } from '../config';
 import {
   dayRate,
@@ -16,6 +16,7 @@ import { queueOp, useApp } from '../state/store';
 interface Props {
   name: string;
   me: string;
+  onOpenTrip: (trip: Trip) => void;
 }
 
 /**
@@ -23,7 +24,7 @@ interface Props {
  * everything they've paid — each line dated, so a disagreement can be settled by
  * pointing at a row rather than re-deriving the month.
  */
-export function PersonDetail({ name, me }: Props) {
+export function PersonDetail({ name, me, onOpenTrip }: Props) {
   const { bootstrap } = useApp();
   const settings = bootstrap?.settings;
   const members = bootstrap?.members ?? [];
@@ -86,16 +87,21 @@ export function PersonDetail({ name, me }: Props) {
         <ul class="list">
           {trips.map((t) => (
             <li key={t.id || `${t.date}-${t.destination}`}>
-              <span>
-                <strong>{t.destination || 'Trip'}</strong>
-                {t.activity ? ` · ${t.activity}` : ''}
-                <br />
-                <span class="muted">
-                  {shortDate(t.date)} · {km(t.distanceKm)} · {t.people} sharing
-                  {t.driver === name ? ' · you drove' : ''}
+              <button class="row-btn" onClick={() => onOpenTrip(t)}>
+                <span>
+                  <strong>{t.destination || 'Trip'}</strong>
+                  {t.activity ? ` · ${t.activity}` : ''}
+                  <br />
+                  <span class="muted">
+                    {shortDate(t.date)} · {km(t.distanceKm)} · {t.people} sharing
+                    {t.driver === name ? ' · they drove' : ''}
+                  </span>
                 </span>
-              </span>
-              <span class="amount">{euro(t.perPerson)}</span>
+                <span class="amount">
+                  {euro(t.perPerson)}
+                  <span class="chev"> ›</span>
+                </span>
+              </button>
             </li>
           ))}
         </ul>

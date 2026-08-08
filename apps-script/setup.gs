@@ -522,6 +522,7 @@ function setupTripLog_(ss) {
     [TRIP.rideRequestId, 'Ride Request ID'],
     [TRIP.origin, 'From'],
     [TRIP.boards, 'Boards?'],
+    [TRIP.until, 'Until'],
   ];
   headers.forEach(function (h) {
     var cell = sheet.getRange(2, h[0]);

@@ -114,6 +114,8 @@ export interface Trip {
   origin: string;
   boards: boolean;
   rideRequestId: string;
+  /** When the car got back. Empty on trips logged before this existed. */
+  until: string;
 }
 
 export type RideStatus = 'open' | 'claimed' | 'done' | 'cancelled';
@@ -182,6 +184,7 @@ export interface CompleteTripPayload {
   rideRequestId: string;
   origin: string;
   boards: boolean;
+  until: string;
 }
 
 export interface LogRidePayload {

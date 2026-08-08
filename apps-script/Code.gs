@@ -28,7 +28,7 @@ var TRIP = {
   tolls: 7, parking: 8, total: 9, people: 10, perPerson: 11, notes: 12,
   id: 13, riders: 14, tripType: 15, reservationId: 16, clientId: 17,
   odoStart: 18, odoEnd: 19, activity: 20, taxi: 21, rideRequestId: 22,
-  origin: 23, boards: 24,
+  origin: 23, boards: 24, until: 25,
 };
 
 var RIDE_REQ = {
@@ -382,7 +382,7 @@ function readTrips_(ss) {
   var s = ss.getSheetByName(SHEETS.trips);
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
-  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.boards).getValues()
+  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.until).getValues()
     .filter(function (r) { return String(r[TRIP.driver - 1]).trim() !== ''; });
   return rows.map(function (r) {
     return {
@@ -402,6 +402,7 @@ function readTrips_(ss) {
       activity: String(r[TRIP.activity - 1] || ''),
       taxi: String(r[TRIP.taxi - 1]).trim().toLowerCase() === 'yes',
       origin: String(r[TRIP.origin - 1] || ''),
+      until: iso_(r[TRIP.until - 1]),
       boards: String(r[TRIP.boards - 1]).trim().toLowerCase() === 'yes',
       rideRequestId: String(r[TRIP.rideRequestId - 1] || ''),
     };
@@ -447,6 +448,7 @@ function completeTrip_(clientId, p) {
   sheet.getRange(row, TRIP.rideRequestId).setValue(p.rideRequestId || '');
   sheet.getRange(row, TRIP.origin).setValue(p.origin || '');
   sheet.getRange(row, TRIP.boards).setValue(p.boards ? 'Yes' : 'No');
+  sheet.getRange(row, TRIP.until).setValue(p.until ? new Date(p.until) : '');
 
   if (p.reservationId) closeReservation_(ss, p.reservationId, 'completed', tripId);
   if (p.rideRequestId) closeRideRequest_(ss, p.rideRequestId, 'done', '', tripId);
@@ -853,6 +855,7 @@ function editTrip_(p) {
   sheet.getRange(row, TRIP.taxi).setValue(isTaxi ? 'Yes' : 'No');
   sheet.getRange(row, TRIP.origin).setValue(p.origin || '');
   sheet.getRange(row, TRIP.boards).setValue(p.boards ? 'Yes' : 'No');
+  sheet.getRange(row, TRIP.until).setValue(p.until ? new Date(p.until) : '');
 
   SpreadsheetApp.flush();
   rebuildRideDays_(ss);
@@ -895,7 +898,7 @@ function deleteTrip_(p) {
     [TRIP.date, TRIP.driver, TRIP.destination, TRIP.manualKm, TRIP.tolls, TRIP.parking,
      TRIP.people, TRIP.notes, TRIP.id, TRIP.riders, TRIP.tripType, TRIP.reservationId,
      TRIP.clientId, TRIP.odoStart, TRIP.odoEnd, TRIP.activity, TRIP.taxi,
-     TRIP.rideRequestId, TRIP.origin, TRIP.boards].forEach(function (col) {
+     TRIP.rideRequestId, TRIP.origin, TRIP.boards, TRIP.until].forEach(function (col) {
       sheet.getRange(row, col).clearContent();
     });
 
@@ -1006,7 +1009,7 @@ function rebuildRideDays_(ss) {
   var trips = ss.getSheetByName(SHEETS.trips);
   var lastTrip = trips.getLastRow();
   if (lastTrip >= FIRST_DATA_ROW) {
-    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.boards).getValues();
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.until).getValues();
     rows.forEach(function (r) {
       var driver = String(r[TRIP.driver - 1]).trim();
       if (!driver) return;
