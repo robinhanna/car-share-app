@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { newClientId } from '../api/client';
+import type { Reservation } from '../api/types';
 import { QUICK_DESTINATIONS, QUICK_DURATIONS } from '../config';
 import { localDateTimeInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
@@ -8,18 +9,27 @@ import { RiderPicker } from './RiderPicker';
 
 interface Props {
   me: string;
+  /** Set when changing a booking that already exists. */
+  reservation?: Reservation;
   onDone: () => void;
 }
 
-export function Reserve({ me, onDone }: Props) {
+export function Reserve({ me, reservation, onDone }: Props) {
   const { bootstrap } = useApp();
   const reservations = bootstrap?.reservations ?? [];
+  const editing = !!reservation;
 
-  const [start, setStart] = useState(defaultStart());
-  const [end, setEnd] = useState(defaultEnd());
-  const [destination, setDestination] = useState<DestinationValue>({ place: '', activity: '' });
-  const [riders, setRiders] = useState<string[]>([]);
-  const [notes, setNotes] = useState('');
+  const [start, setStart] = useState(
+    reservation ? localDateTimeInput(new Date(reservation.start)) : defaultStart(),
+  );
+  const [end, setEnd] = useState(
+    reservation ? localDateTimeInput(new Date(reservation.end)) : defaultEnd(),
+  );
+  const [destination, setDestination] = useState<DestinationValue>(
+    splitDestination(reservation?.destination ?? ''),
+  );
+  const [riders, setRiders] = useState<string[]>(reservation?.riders ?? []);
+  const [notes, setNotes] = useState(reservation?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
   const startMs = new Date(start).getTime();
@@ -47,28 +57,36 @@ export function Reserve({ me, onDone }: Props) {
 
   // Advisory only: a queued reservation on someone else's phone can't be seen
   // until it syncs, so this catches the common case, not every case.
+  // Skipping the booking being edited matters — otherwise it always overlaps
+  // itself and the driver is warned about their own reservation on every save.
   const clash = reservations.find(
-    (r) => new Date(r.start).getTime() < endMs && new Date(r.end).getTime() > startMs,
+    (r) =>
+      r.id !== reservation?.id &&
+      new Date(r.start).getTime() < endMs &&
+      new Date(r.end).getTime() > startMs,
   );
 
   const save = async () => {
     setSaving(true);
-    await queueOp('createReservation', {
-      id: newClientId(),
-      driver: me,
+    const common = {
       riders,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       destination: [destination.place, destination.activity].filter(Boolean).join(' · '),
       notes,
-    });
+    };
+    if (reservation) {
+      await queueOp('editReservation', { ...common, id: reservation.id });
+    } else {
+      await queueOp('createReservation', { ...common, id: newClientId(), driver: me });
+    }
     onDone();
   };
 
   return (
     <>
-      <p class="kicker">Booking</p>
-      <h1>Reserve the car</h1>
+      <p class="kicker">{editing ? 'Editing' : 'Booking'}</p>
+      <h1>{editing ? 'Change this booking' : 'Reserve the car'}</h1>
       <div class="spacer" />
 
       {/* The fast path: a run to Burgau shouldn't cost the same six taps as a
@@ -165,7 +183,7 @@ export function Reserve({ me, onDone }: Props) {
           the bottom — which isn't quick. */}
       <div class="sticky-action">
         <button class="btn" disabled={!validRange || saving} onClick={() => void save()}>
-          {saving ? 'Saving…' : 'Reserve'}
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Reserve'}
         </button>
         {!validRange && <p class="muted center">The end time has to be after the start.</p>}
       </div>
@@ -177,6 +195,17 @@ function durationLabel(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
   const hours = minutes / 60;
   return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+}
+
+/**
+ * The reverse of the join in save(): a destination is stored as "place · activity".
+ * Splitting on the first separator only, since an activity never contains one but
+ * a place name conceivably could.
+ */
+function splitDestination(stored: string): DestinationValue {
+  const at = stored.indexOf(' · ');
+  if (at === -1) return { place: stored, activity: '' };
+  return { place: stored.slice(0, at), activity: stored.slice(at + 3) };
 }
 
 /** Rounded to the next half hour, in the phone's own timezone. */

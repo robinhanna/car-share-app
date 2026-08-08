@@ -4,6 +4,7 @@ import type {
   Bootstrap,
   CompleteTripPayload,
   CreateReservationPayload,
+  EditReservationPayload,
   LogKarmaPayload,
   Member,
   Op,
@@ -120,6 +121,7 @@ let bootstrap: Bootstrap = {
       status: 'reserved',
       tripId: '',
       notes: '',
+      updated: '',
     },
   ],
   recentTrips: [],
@@ -171,8 +173,30 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
         ...bootstrap,
         reservations: [
           ...bootstrap.reservations,
-          { ...r, created: new Date().toISOString(), status: 'reserved', tripId: '' },
+          { ...r, created: new Date().toISOString(), status: 'reserved', tripId: '', updated: '' },
         ],
+      };
+    }
+
+    // Mirrors editReservation_: the five editable fields plus the stamp, and
+    // nothing else — driver and status stay where they are.
+    if (op.op === 'editReservation') {
+      const e = op.payload as EditReservationPayload;
+      bootstrap = {
+        ...bootstrap,
+        reservations: bootstrap.reservations.map((r) =>
+          r.id === e.id
+            ? {
+                ...r,
+                riders: e.riders,
+                start: e.start,
+                end: e.end,
+                destination: e.destination,
+                notes: e.notes,
+                updated: new Date().toISOString(),
+              }
+            : r,
+        ),
       };
     }
 

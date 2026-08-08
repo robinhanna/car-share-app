@@ -92,6 +92,8 @@ export interface Reservation {
   status: ReservationStatus;
   tripId: string;
   notes: string;
+  /** When the driver last changed the plan. Empty if never edited. */
+  updated: string;
 }
 
 export interface Trip {
@@ -158,6 +160,7 @@ export interface Bootstrap {
 export type OpName =
   | 'completeTrip'
   | 'createReservation'
+  | 'editReservation'
   | 'cancelReservation'
   | 'logKarma'
   | 'logPayment'
@@ -241,6 +244,16 @@ export interface CreateReservationPayload {
   notes: string;
 }
 
+/** Only what a driver may change. Driver and status are not theirs to move. */
+export interface EditReservationPayload {
+  id: string;
+  riders: string[];
+  start: string;
+  end: string;
+  destination: string;
+  notes: string;
+}
+
 export interface CancelReservationPayload {
   id: string;
 }
@@ -278,6 +291,7 @@ export interface ResetPayload {
 export type OpPayload =
   | CompleteTripPayload
   | CreateReservationPayload
+  | EditReservationPayload
   | CancelReservationPayload
   | LogKarmaPayload
   | LogPaymentPayload

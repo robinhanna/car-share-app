@@ -5,6 +5,7 @@ import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
 import { sync, useApp } from './state/store';
 import { Balance } from './screens/Balance';
+import { BookingDetail } from './screens/BookingDetail';
 import { Home } from './screens/Home';
 import { Karma } from './screens/Karma';
 import { LogTrip } from './screens/LogTrip';
@@ -18,7 +19,8 @@ import { TripSummary } from './screens/TripSummary';
 
 export type Route =
   | { name: 'home' }
-  | { name: 'reserve' }
+  | { name: 'reserve'; reservation?: Reservation }
+  | { name: 'booking'; booking: Reservation }
   | { name: 'log'; reservationId?: string; reservation?: Reservation; ride?: RideRequest; trip?: Trip }
   | { name: 'rides' }
   | { name: 'summary'; cost: TripCost; destination: string }
@@ -94,7 +96,15 @@ export function App() {
       <Banners />
 
       {route.name === 'home' && <Home me={me} onNavigate={go} />}
-      {route.name === 'reserve' && <Reserve me={me} onDone={home} />}
+      {route.name === 'reserve' && (
+        // Editing returns where you came from; a fresh booking goes home.
+        <Reserve
+          me={me}
+          reservation={route.reservation}
+          onDone={route.reservation ? back : home}
+        />
+      )}
+      {route.name === 'booking' && <BookingDetail booking={route.booking} me={me} />}
       {route.name === 'rides' && (
         <Rides me={me} onDrive={(ride) => go({ name: 'log', ride })} />
       )}

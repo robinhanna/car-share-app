@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'preact/hooks';
 import type { Route } from '../app';
+import type { Reservation } from '../api/types';
 import { ADMIN_MEMBER } from '../config';
 import { dayRate, euro, km, personLedger } from '../lib/cost';
 import { shortDate, timeLabel } from '../lib/dates';
+import { getSeen, hasChanged, markSeen } from '../state/seen';
 import { queueOp, sync, useApp } from '../state/store';
 
 /** A reservation or a claimed lift — both block the car, so both show together. */
@@ -13,6 +16,8 @@ interface Booking {
   when: string;
   lift: boolean;
   riders: string[];
+  /** Set only on reservations — a lift's details belong to the ride request. */
+  reservation?: Reservation;
   onLog: (go: (route: Route) => void) => void;
   onCancel: () => void;
   onJoin: (join: boolean) => void;
@@ -27,6 +32,29 @@ export function Home({ me, onNavigate }: Props) {
   const { bootstrap, syncing } = useApp();
   const reservations = bootstrap?.reservations ?? [];
   const now = Date.now();
+
+  const [seen, setSeen] = useState(getSeen);
+
+  // Seed anything never seen before, so a booking's first appearance doesn't
+  // announce itself as a change. Only the driver's own edits should do that,
+  // and only for people who had already seen the earlier version.
+  useEffect(() => {
+    let next = seen;
+    reservations.forEach((r) => {
+      if (r.driver === me) return;
+      if (next[r.id] === undefined) next = markSeen(r.id, r.updated);
+    });
+    if (next !== seen) setSeen(next);
+  }, [reservations, me, seen]);
+
+  const openBooking = (r: Reservation) => {
+    setSeen(markSeen(r.id, r.updated));
+    // The driver goes straight to the form; everyone else gets the read-only
+    // page. Same gesture, different rights.
+    onNavigate(
+      r.driver === me ? { name: 'reserve', reservation: r } : { name: 'booking', booking: r },
+    );
+  };
 
   const active = reservations.find(
     (r) => new Date(r.start).getTime() <= now && new Date(r.end).getTime() >= now,
@@ -48,6 +76,7 @@ export function Home({ me, onNavigate }: Props) {
       when: `${timeLabel(r.start)} – ${timeLabel(r.end)}`,
       lift: false,
       riders: r.riders,
+      reservation: r,
       onLog: (go: (route: Route) => void) =>
         go({ name: 'log', reservationId: r.id, reservation: r }),
       onCancel: () => void queueOp('cancelReservation', { id: r.id }),
@@ -198,15 +227,36 @@ export function Home({ me, onNavigate }: Props) {
           <div class="spacer" />
           <p class="section-title">Coming up</p>
           <ul class="list">
-            {booked.slice(0, 6).map((b) => (
-              <li key={b.id}>
+            {booked.slice(0, 6).map((b) => {
+              const changed =
+                !!b.reservation &&
+                b.reservation.driver !== me &&
+                hasChanged(seen, b.reservation.id, b.reservation.updated);
+
+              const label = (
                 <span>
                   <strong>{b.driver || 'Nobody yet'}</strong>
                   {b.what ? ` · ${b.what}` : ''}
                   {b.lift && <span class="tag">lift</span>}
+                  {changed && <span class="tag tag--alert">changed</span>}
                   <br />
                   <span class="muted">{b.when}</span>
                 </span>
+              );
+
+              return (
+              <li key={b.id}>
+                {/* Reservations open on tap — the form for whoever made it, the
+                    read-only page for everyone else. Lifts don't: their details
+                    live on the ride request and belong to the passenger. */}
+                {b.reservation ? (
+                  <button class="row-btn" onClick={() => openBooking(b.reservation!)}>
+                    {label}
+                    <span class="chev"> ›</span>
+                  </button>
+                ) : (
+                  label
+                )}
 
                 <span class="row-actions">
                   {/* Hop on someone else's booking. Meaningless on your own,
@@ -243,7 +293,8 @@ export function Home({ me, onNavigate }: Props) {
                   )}
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </>
       )}

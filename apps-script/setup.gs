@@ -48,11 +48,11 @@ function setupReservations_(ss) {
 
   sheet.getRange('A1').setValue('Reservations — who has the car, and when');
   sheet.getRange('A1').setFontWeight('bold');
-  sheet.getRange(2, 1, 1, 11).setValues([[
+  sheet.getRange(2, 1, 1, RES.updated).setValues([[
     'ID', 'Created', 'Driver', 'Riders', 'Start', 'End',
-    'Destination', 'Status', 'Trip ID', 'Client ID', 'Notes',
+    'Destination', 'Status', 'Trip ID', 'Client ID', 'Notes', 'Updated',
   ]]);
-  sheet.getRange(2, 1, 1, 11).setFontWeight('bold');
+  sheet.getRange(2, 1, 1, RES.updated).setFontWeight('bold');
   sheet.setFrozenRows(2);
 
   var status = SpreadsheetApp.newDataValidation()
@@ -833,7 +833,7 @@ function showToken() {
  * versions ago — which is the failure that keeps happening, because pasting and
  * deploying are separate steps. This constant catches that.
  */
-var EXPECTED_CODE_VERSION = 11;
+var EXPECTED_CODE_VERSION = 12;
 
 function verifyInstall() {
   var required = [
@@ -852,6 +852,7 @@ function verifyInstall() {
     'editTrip_', 'deleteTrip_', 'findTripRow_', 'logRide_', 'sweepDueRides_',
     'knownDistance_', 'awardLiftKarma_', 'removeLiftKarma_', 'liftKarmaAction_',
     'joinReservation_', 'joinRide_', 'toggleName_', 'tripMatchesReservation_',
+    'editReservation_', 'findReservationRow_',
     // setup.gs
     'setupSheet', 'setupReservations_', 'setupRideRequests_', 'setupKarmaActions_',
     'setupKarmaLog_', 'setupPlaces_', 'setupPayments_', 'setupRideDays_', 'setupSettings_',

@@ -17,7 +17,7 @@
  * bootstrap returns this number so the app can say so out loud, and
  * verifyInstall() compares it against what setup.gs expects.
  */
-var CODE_VERSION = 11;
+var CODE_VERSION = 12;
 
 var SHEETS = {
   settings: 'Settings',
@@ -50,6 +50,9 @@ var RIDE_REQ = {
 var RES = {
   id: 1, created: 2, driver: 3, riders: 4, start: 5, end: 6,
   destination: 7, status: 8, tripId: 9, clientId: 10, notes: 11,
+  // When the driver last changed the plan. The app compares this against what
+  // each phone last acknowledged to decide who needs telling.
+  updated: 12,
 };
 
 var KARMA = { date: 1, name: 2, action: 3, points: 4, clientId: 5 };
@@ -133,6 +136,7 @@ function applyOp_(op) {
   switch (op.op) {
     case 'completeTrip': return completeTrip_(op.clientId, op.payload || {});
     case 'createReservation': return createReservation_(op.clientId, op.payload || {});
+    case 'editReservation': return editReservation_(op.payload || {});
     case 'cancelReservation': return cancelReservation_(op.payload || {});
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
     case 'logPayment': return logPayment_(op.clientId, op.payload || {});
@@ -368,7 +372,7 @@ function readReservations_(ss) {
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
   var cutoff = new Date(Date.now() - 24 * 3600 * 1000);
-  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 11).getValues()
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, RES.updated).getValues()
     .filter(function (r) { return String(r[0]).trim() !== ''; })
     .map(function (r) {
       return {
@@ -382,6 +386,7 @@ function readReservations_(ss) {
         status: String(r[RES.status - 1] || 'reserved'),
         tripId: String(r[RES.tripId - 1] || ''),
         notes: String(r[RES.notes - 1] || ''),
+        updated: iso_(r[RES.updated - 1]),
       };
     })
     .filter(function (r) {
@@ -516,7 +521,7 @@ function createReservation_(clientId, p) {
 
   var row = firstEmptyRow_(sheet, RES.id);
   var id = p.id || clientId;
-  sheet.getRange(row, RES.id, 1, 11).setValues([[
+  sheet.getRange(row, RES.id, 1, RES.updated).setValues([[
     id,
     new Date().toISOString(),
     p.driver || '',
@@ -528,6 +533,8 @@ function createReservation_(clientId, p) {
     '',
     clientId,
     p.notes || '',
+    // Never edited, so nothing to tell anyone about yet.
+    '',
   ]]);
   return { row: row, id: id };
 }
@@ -546,21 +553,19 @@ function cancelReservation_(p) {
  * logged — so there's no ride-day rebuild. What it buys is that the driver
  * finds you already in the car when they come to log it.
  */
+/**
+ * Deliberately does not stamp RES.updated: someone hopping on isn't the driver
+ * changing the plan, and pilling everyone for it would make the pill noise.
+ */
 function joinReservation_(p) {
   var ss = SpreadsheetApp.getActive();
   var sheet = ss.getSheetByName(SHEETS.reservations);
-  var last = sheet.getLastRow();
-  if (last < FIRST_DATA_ROW) throw new Error('Reservation not found: ' + p.id);
+  var row = findReservationRow_(sheet, p.id);
+  if (!row) throw new Error('Reservation not found: ' + p.id);
 
-  var ids = sheet.getRange(FIRST_DATA_ROW, RES.id, last - 2, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) !== String(p.id)) continue;
-    var row = FIRST_DATA_ROW + i;
-    var riders = toggleName_(splitList_(sheet.getRange(row, RES.riders).getValue()), p.name, p.join);
-    sheet.getRange(row, RES.riders).setValue(riders.join(', '));
-    return { id: p.id, riders: riders };
-  }
-  throw new Error('Reservation not found: ' + p.id);
+  var riders = toggleName_(splitList_(sheet.getRange(row, RES.riders).getValue()), p.name, p.join);
+  sheet.getRange(row, RES.riders).setValue(riders.join(', '));
+  return { id: p.id, riders: riders };
 }
 
 function joinRide_(p) {
@@ -610,20 +615,53 @@ function tripMatchesReservation_(ss, reservationId, tripStart) {
   return false;
 }
 
-function closeReservation_(ss, reservationId, status, tripId) {
-  var sheet = ss.getSheetByName(SHEETS.reservations);
+/** Row number for a reservation id, or 0. Mirrors findRideRequest_. */
+function findReservationRow_(sheet, id) {
   var last = sheet.getLastRow();
-  if (last < FIRST_DATA_ROW) return false;
+  if (last < FIRST_DATA_ROW) return 0;
   var ids = sheet.getRange(FIRST_DATA_ROW, RES.id, last - 2, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(reservationId)) {
-      var row = FIRST_DATA_ROW + i;
-      sheet.getRange(row, RES.status).setValue(status);
-      if (tripId) sheet.getRange(row, RES.tripId).setValue(tripId);
-      return true;
-    }
+    if (String(ids[i][0]) === String(id)) return FIRST_DATA_ROW + i;
   }
-  return false;
+  return 0;
+}
+
+function closeReservation_(ss, reservationId, status, tripId) {
+  var sheet = ss.getSheetByName(SHEETS.reservations);
+  var row = findReservationRow_(sheet, reservationId);
+  if (!row) return false;
+  sheet.getRange(row, RES.status).setValue(status);
+  if (tripId) sheet.getRange(row, RES.tripId).setValue(tripId);
+  return true;
+}
+
+/**
+ * Change the plan on an existing booking.
+ *
+ * Only the five fields the driver can actually edit, plus the timestamp.
+ * Driver, created, status, tripId and clientId are deliberately untouched: an
+ * edit changes when and where, it doesn't hand the car to someone else or
+ * bring a cancelled booking back to life.
+ */
+function editReservation_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.reservations);
+  var row = findReservationRow_(sheet, p.id);
+  if (!row) throw new Error('Reservation not found: ' + p.id);
+
+  var status = String(sheet.getRange(row, RES.status).getValue() || 'reserved').trim();
+  if (status !== 'reserved') {
+    throw new Error('That booking is ' + status + ' — it can no longer be changed.');
+  }
+
+  var updated = new Date().toISOString();
+  sheet.getRange(row, RES.riders).setValue((p.riders || []).join(', '));
+  sheet.getRange(row, RES.start).setValue(p.start ? new Date(p.start) : '');
+  sheet.getRange(row, RES.end).setValue(p.end ? new Date(p.end) : '');
+  sheet.getRange(row, RES.destination).setValue(p.destination || '');
+  sheet.getRange(row, RES.notes).setValue(p.notes || '');
+  sheet.getRange(row, RES.updated).setValue(updated);
+  return { id: p.id, row: row, updated: updated };
 }
 
 function logKarma_(clientId, p) {

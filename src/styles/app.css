@@ -552,6 +552,12 @@ h1 + .spacer + .card {
   vertical-align: 1px;
 }
 
+/* Same pill as the lift tag, in red: the driver moved this and you should look. */
+.tag--alert {
+  background: var(--rust);
+  color: var(--white);
+}
+
 .chev {
   color: var(--ink-soft);
   font-weight: 400;
