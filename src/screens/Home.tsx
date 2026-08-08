@@ -213,12 +213,13 @@ export function Home({ me, onNavigate }: Props) {
                       so it isn't shown there. */}
                   {b.driver !== me && b.passenger !== me && (
                     <button
-                      class={`icon-btn ${b.riders.includes(me) ? 'icon-btn--on' : ''}`}
+                      class="icon-btn icon-btn--join"
+                      aria-pressed={b.riders.includes(me)}
                       aria-label={b.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
                       title={b.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
                       onClick={() => b.onJoin(!b.riders.includes(me))}
                     >
-                      {b.riders.includes(me) ? '👤−' : '👤+'}
+                      {b.riders.includes(me) ? '−' : '+'}
                     </button>
                   )}
                   {b.driver === me && (
