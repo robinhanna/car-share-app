@@ -523,24 +523,26 @@ h1 + .spacer + .card {
 
 /*
  * Add me / take me off a booking. Filled either way so the state reads at a
- * glance: green plus to join, red minus once you're on.
+ * glance: the lift pill's green to join, the Log it button's red once you're on
+ * — the same two colours those controls already use, so the row reads as one
+ * palette rather than three.
  *
- * The darker green, not --teal: white on --teal is 2.25:1 and unreadable at
- * this size. --teal-dark gives 5.6:1 and --rust 5.9:1, so both glyphs hold.
+ * Ink on top, not white, for the same reason .tag and .btn use ink: white on
+ * --teal is 2.25:1 and on --coral worse still. Ink gives 6.9:1 and 6.1:1.
  */
 /* Two classes deep, or `.row-actions .icon-btn` wins and the glyph sits at 14px. */
 .icon-btn.icon-btn--join {
-  background: var(--teal-dark);
-  border-color: var(--teal-dark);
-  color: var(--white);
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--ink);
   font-size: 24px;
   font-weight: 400;
   line-height: 1;
 }
 
 .icon-btn--join[aria-pressed='true'] {
-  background: var(--rust);
-  border-color: var(--rust);
+  background: var(--coral);
+  border-color: var(--coral);
 }
 
 .icon-btn--danger {
