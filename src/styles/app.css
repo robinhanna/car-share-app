@@ -402,6 +402,16 @@ h1 + .spacer + .card {
   font-weight: 600;
 }
 
+/*
+ * A guest owes nothing, so they get neither money colour — sand reads as
+ * "along for the ride" without implying a bill either way.
+ */
+.chip[data-role='guest'][aria-pressed='true'] {
+  background: var(--sand);
+  border-color: var(--sand);
+  font-weight: 600;
+}
+
 .dot {
   display: inline-block;
   width: 8px;
@@ -414,6 +424,13 @@ h1 + .spacer + .card {
 
 .dot--rider {
   background: var(--teal);
+}
+
+/* Must sit after .dot — same specificity, so source order decides, and a guest
+   dot inheriting the coral would read as "pays into the rental". */
+.dot--guest {
+  background: var(--sand);
+  box-shadow: inset 0 0 0 1px var(--ink-soft);
 }
 
 .legend {
@@ -535,9 +552,12 @@ h1 + .spacer + .card {
   background: var(--teal);
   border-color: var(--teal);
   color: var(--ink);
-  font-size: 24px;
-  font-weight: 400;
+  /* "+1" rather than a bare "+", which read as ambiguously as "add a booking".
+     Two characters need a smaller face to sit inside the 38px circle. */
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1;
+  letter-spacing: -0.5px;
 }
 
 .icon-btn--join[aria-pressed='true'] {

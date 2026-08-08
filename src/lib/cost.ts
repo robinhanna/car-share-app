@@ -60,7 +60,13 @@ export interface TripCostInput {
   distanceKm: number;
   tolls?: number;
   parking?: number;
+  /** Everyone in the back, guests included — this is what the car carried. */
   riderCount: number;
+  /**
+   * How many of those actually share the bill. Guests ride free, so they add
+   * weight but not a wallet. Defaults to riderCount when there are no guests.
+   */
+  payingRiderCount?: number;
   /** A favour, not a shared outing: the driver pays nothing. */
   taxi?: boolean;
   /** Boards on the roof — real drag, real fuel. */
@@ -87,14 +93,19 @@ export function tripCost(input: TripCostInput, settings: Settings): TripCost {
   const tolls = input.tolls ?? 0;
   const parking = input.parking ?? 0;
 
-  // On a taxi run the cost divides between the passengers only. With nobody in
-  // the back there is no favour being done, so it falls back to a normal split
-  // rather than dividing by zero.
-  const isTaxi = !!input.taxi && input.riderCount > 0;
-  const people = isTaxi ? input.riderCount : Math.max(1 + input.riderCount, 1);
+  const paying = input.payingRiderCount ?? input.riderCount;
 
-  // The driver's weight counts towards the load even on a lift they aren't
-  // paying for — the car still carried them.
+  // On a taxi run the cost divides between the passengers only. With nobody in
+  // the back who pays — an empty car, or a car full of guests — there is no
+  // favour being done at anyone's expense, so it falls back to the driver
+  // covering their own petrol rather than dividing by zero or, worse, leaving
+  // the fuel to come quietly out of the shared pot.
+  const isTaxi = !!input.taxi && paying > 0;
+  const people = isTaxi ? paying : Math.max(1 + paying, 1);
+
+  // Weight is weight. The driver counts towards the load even on a lift they
+  // aren't paying for, and so does a guest who isn't paying at all — the car
+  // still carried them and still burned the fuel.
   const onboard = 1 + input.riderCount;
   const fuel = fuelCost(input.distanceKm, settings) * loadFactor(onboard, !!input.boards);
   const total = fuel + tolls + parking;
@@ -174,6 +185,29 @@ export function dayCharge(tripsThatDay: Trip[]): number {
  * 6th but nobody is paying the owner for it, so a trip that day costs fuel and
  * no day rate. Mirrors the period check in rebuildRideDays_.
  */
+/**
+ * Splits a rider list into the people who share the bill and the guests who
+ * don't. Mirrors payingRiders_ in Code.gs — same rule, both ends: a guest is
+ * anyone missing from Members, or listed there with the role "Guest".
+ *
+ * Keeping the definition identical is what stops the running total on the form
+ * disagreeing with what the sheet eventually stores.
+ */
+export function splitRiders(
+  riders: string[],
+  members: Member[],
+): { paying: string[]; guests: string[] } {
+  const pays = new Set(
+    members.filter((m) => m.role !== 'Guest').map((m) => m.name.trim().toLowerCase()),
+  );
+  const paying: string[] = [];
+  const guests: string[] = [];
+  riders.forEach((name) => {
+    (pays.has(name.trim().toLowerCase()) ? paying : guests).push(name);
+  });
+  return { paying, guests };
+}
+
 export function personRideDays(
   name: string,
   trips: Trip[],

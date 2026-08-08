@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'preact/hooks';
 import type { Place, Reservation, RideRequest, Spot, Trip, TripType } from '../api/types';
-import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
+import { euro, km, splitRiders, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
 import { localDateTimeInput } from '../lib/dates';
 import { splitDestination } from '../lib/destination';
 import { queueOp, useApp } from '../state/store';
@@ -87,6 +87,10 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
     [mode, odoStart, odoEnd, spot, tripType, manualKm, taxi],
   );
 
+  // Guests are in the car but not in the sum, so the running total has to know
+  // the difference — otherwise the form quotes a split the sheet won't produce.
+  const { paying, guests } = splitRiders(riders, bootstrap?.members ?? []);
+
   const cost = settings
     ? tripCost(
         {
@@ -94,6 +98,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
           tolls: numOrNull(tolls) ?? 0,
           parking: numOrNull(parking) ?? 0,
           riderCount: riders.length,
+          payingRiderCount: paying.length,
           taxi,
           boards,
         },
@@ -295,9 +300,11 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
           <button aria-pressed={!taxi} onClick={() => setTaxi(false)}>
             Split with me
           </button>
+          {/* Pointless with only guests aboard: there'd be nobody to hand the
+              bill to, so it would quietly behave like a normal trip anyway. */}
           <button
             aria-pressed={taxi}
-            disabled={riders.length === 0}
+            disabled={paying.length === 0}
             onClick={() => setTaxi(true)}
           >
             I drove them
@@ -305,8 +312,10 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
         </div>
         <p class="muted" style="margin:8px 0 0">
           {taxi
-            ? `A lift: the ${riders.length === 1 ? 'passenger covers' : 'passengers cover'} the cost, you pay nothing.`
-            : 'A shared trip: the cost splits between everyone in the car, you included.'}
+            ? `A lift: the ${paying.length === 1 ? 'passenger covers' : 'passengers cover'} the cost, you pay nothing.`
+            : guests.length > 0
+              ? `A shared trip: the cost splits between the ${paying.length + 1} of you paying. ${guests.join(' and ')} ${guests.length === 1 ? 'rides' : 'ride'} free.`
+              : 'A shared trip: the cost splits between everyone in the car, you included.'}
         </p>
       </div>
 

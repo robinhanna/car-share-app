@@ -185,7 +185,7 @@ export function Home({ me, onNavigate }: Props) {
                   })
                 }
               >
-                {active.riders.includes(me) ? '−' : '+'}
+                {active.riders.includes(me) ? '−1' : '+1'}
               </button>
             )}
             {/* Plans fall through. Without this the car reads as taken until the
@@ -321,7 +321,7 @@ export function Home({ me, onNavigate }: Props) {
                       title={b.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
                       onClick={() => b.onJoin(!b.riders.includes(me))}
                     >
-                      {b.riders.includes(me) ? '−' : '+'}
+                      {b.riders.includes(me) ? '−1' : '+1'}
                     </button>
                   )}
                   {b.driver === me && (

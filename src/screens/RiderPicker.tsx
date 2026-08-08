@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { splitRiders } from '../lib/cost';
 import { useApp } from '../state/store';
 
 interface Props {
@@ -9,18 +10,23 @@ interface Props {
 }
 
 /**
- * Riders aren't decoration: headcount is driver + riders, which sets the
- * per-person trip cost, and each rider picks up a ride-day that feeds the day
- * rate. Guests count exactly like anyone else.
+ * Riders aren't decoration: headcount is driver + paying riders, which sets the
+ * per-person trip cost, and each paying rider picks up a ride-day that feeds
+ * the day rate.
+ *
+ * Guests are the exception — they ride free. Their name is recorded against
+ * this one trip so the car remembers who was in it, but it never joins the
+ * roster and they never owe anything.
  */
 export function RiderPicker({ me, selected, onChange, label }: Props) {
   const { bootstrap } = useApp();
-  const members = (bootstrap?.members ?? []).filter((m) => m.name !== me);
+  const all = bootstrap?.members ?? [];
+  const members = all.filter((m) => m.name !== me);
   const [guest, setGuest] = useState('');
   const [addingGuest, setAddingGuest] = useState(false);
 
-  const known = new Set(members.map((m) => m.name));
-  const guests = selected.filter((n) => !known.has(n));
+  // Same rule as the sheet: anyone not on the roster rides free.
+  const { paying, guests } = splitRiders(selected, all);
 
   const toggle = (name: string) => {
     onChange(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]);
@@ -41,7 +47,11 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
   return (
     <div class="field">
       <span>
-        {label ?? 'Who else was in the car?'} ({selected.length + 1} sharing)
+        {/* Counts wallets, not bodies — a guest in the car doesn't change what
+            anyone pays, and saying "3 sharing" when two are paying would
+            promise a split the sheet won't produce. */}
+        {label ?? 'Who else was in the car?'} ({paying.length + 1} sharing
+        {guests.length > 0 ? `, ${guests.length} free` : ''})
       </span>
       <div class="chips">
         {members.map((m) => (
@@ -63,18 +73,18 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
             key={name}
             type="button"
             class="chip"
-            data-role="rider"
+            data-role="guest"
             aria-pressed={true}
             onClick={() => toggle(name)}
           >
-            <span class="dot dot--rider" />
+            <span class="dot dot--guest" />
             {name}
           </button>
         ))}
 
         {!addingGuest && (
           <button type="button" class="chip chip--add" onClick={() => setAddingGuest(true)}>
-            + Someone else
+            + Guest
           </button>
         )}
       </div>
@@ -109,6 +119,12 @@ export function RiderPicker({ me, selected, onChange, label }: Props) {
           <span class="dot dot--rider" />
           pays per day ridden
         </span>
+        {guests.length > 0 && (
+          <span>
+            <span class="dot dot--guest" />
+            rides free
+          </span>
+        )}
       </p>
     </div>
   );

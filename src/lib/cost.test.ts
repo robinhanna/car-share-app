@@ -307,6 +307,53 @@ describe('taxi trips', () => {
     const cost = tripCost({ distanceKm: 28, riderCount: 0, taxi: true }, settings);
     expect(cost.people).toBe(1);
   });
+
+  it('charges the driver when a lift carries only guests', () => {
+    // Nobody in the back pays, so the favour has no one to bill. The driver
+    // covers their own petrol rather than the pot absorbing it.
+    const cost = tripCost(
+      { distanceKm: 28, riderCount: 2, payingRiderCount: 0, taxi: true },
+      settings,
+    );
+    expect(cost.people).toBe(1);
+    expect(cost.perPerson).toBeCloseTo(cost.total, 5);
+  });
+});
+
+describe('guests', () => {
+  it('splits the trip between the paying people only', () => {
+    const cost = tripCost(
+      { distanceKm: 28, riderCount: 2, payingRiderCount: 1 },
+      settings,
+    );
+    // Driver plus one paying rider — the guest is in the car but not the sum.
+    expect(cost.people).toBe(2);
+    expect(cost.perPerson).toBeCloseTo(cost.total / 2, 5);
+  });
+
+  it('still counts a guest towards the fuel, because the car carried them', () => {
+    const withGuest = tripCost(
+      { distanceKm: 28, riderCount: 2, payingRiderCount: 1 },
+      settings,
+    );
+    const without = tripCost({ distanceKm: 28, riderCount: 1 }, settings);
+    expect(withGuest.fuelCost).toBeGreaterThan(without.fuelCost);
+    // 3% a head: three aboard rather than two.
+    expect(withGuest.fuelCost / without.fuelCost).toBeCloseTo(1.06 / 1.03, 4);
+  });
+
+  it('leaves the books balanced — a guest takes nothing out of the pot', () => {
+    // The bug this fixes: a guest used to pick up ride-days, widening the
+    // denominator, so everyone's share fell to cover a charge nobody collected.
+    const members = [
+      member({ name: 'Robin', included: true, daysActive: 25 }),
+      member({ name: 'Julia', included: true, daysActive: 25 }),
+      member({ name: 'Jonas', included: true, daysActive: 25 }),
+    ];
+    const rate = dayRate(members, { ...settings, riderDays: 0 });
+    const collected = members.reduce((sum, m) => sum + m.daysActive * rate, 0);
+    expect(collected).toBeCloseTo(settings.totalCost, 2);
+  });
 });
 
 describe('person ledger', () => {

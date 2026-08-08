@@ -17,7 +17,7 @@
  * bootstrap returns this number so the app can say so out loud, and
  * verifyInstall() compares it against what setup.gs expects.
  */
-var CODE_VERSION = 12;
+var CODE_VERSION = 13;
 
 var SHEETS = {
   settings: 'Settings',
@@ -445,10 +445,13 @@ function completeTrip_(clientId, p) {
   ensureTripFormulas_(sheet, row);
 
   var riders = p.riders || [];
-  // A "taxi" with nobody in the back is just a drive, so it falls through to
-  // the normal split rather than dividing a cost by zero.
-  var isTaxi = !!p.taxi && riders.length > 0;
-  var people = isTaxi ? riders.length : 1 + riders.length;
+  // Guests are in the car but not in the sum, so headcount counts wallets.
+  // A "taxi" with nobody in the back who pays — empty, or carrying only guests
+  // — is just a drive, so it falls through to the driver covering their own
+  // petrol rather than dividing by zero or leaving the pot to absorb it.
+  var paying = payingRiders_(SpreadsheetApp.getActive(), riders);
+  var isTaxi = !!p.taxi && paying.length > 0;
+  var people = isTaxi ? paying.length : 1 + paying.length;
   var tripId = p.tripId || clientId;
 
   sheet.getRange(row, TRIP.date).setValue(p.date ? new Date(p.date) : new Date());
@@ -613,6 +616,42 @@ function tripMatchesReservation_(ss, reservationId, tripStart) {
       t <= end.getTime() + RESERVATION_GRACE_MS;
   }
   return false;
+}
+
+/**
+ * Who in this rider list actually pays.
+ *
+ * A guest is anyone not on the Members tab, or on it with the role "Guest".
+ * They ride free: no share of the petrol, no ride-day, nothing on the Ride Days
+ * tab. Their name lives in the trip's Riders cell and nowhere else, which is the
+ * whole point — it records who was in the car without turning them into someone
+ * the app has to keep.
+ *
+ * Before this, a guest picked up ride-days like an ordinary non-driver. Those
+ * days widened the day-rate denominator, so everyone else's share fell to cover
+ * a charge nobody would ever collect — the pot came up short by exactly the
+ * guest's own bill, every time.
+ */
+/**
+ * True when this occupant rides free — either no Members row at all (a name
+ * typed into the trip form) or one whose role is "Guest".
+ *
+ * Takes the already-looked-up entry rather than a name, so rebuildRideDays_
+ * doesn't create the very row we're deciding not to create.
+ */
+function isFreeRider_(entry) {
+  if (!entry || !entry.member) return true;
+  return String(entry.member.role).trim().toLowerCase() === 'guest';
+}
+
+function payingRiders_(ss, riders) {
+  var paying = {};
+  rawMembers_(ss).forEach(function (m) {
+    if (String(m.role).trim().toLowerCase() !== 'guest') paying[m.name.toLowerCase()] = true;
+  });
+  return (riders || []).filter(function (name) {
+    return paying[String(name).trim().toLowerCase()];
+  });
 }
 
 /** Row number for a reservation id, or 0. Mirrors findRideRequest_. */
@@ -979,7 +1018,8 @@ function editTrip_(p) {
   if (!row) throw new Error('Trip not found: ' + p.tripId);
 
   var riders = p.riders || [];
-  var isTaxi = !!p.taxi && riders.length > 0;
+  var paying = payingRiders_(ss, riders);
+  var isTaxi = !!p.taxi && paying.length > 0;
 
   if (p.date) sheet.getRange(row, TRIP.date).setValue(new Date(p.date));
   if (p.driver) sheet.getRange(row, TRIP.driver).setValue(p.driver);
@@ -987,7 +1027,7 @@ function editTrip_(p) {
   sheet.getRange(row, TRIP.manualKm).setValue(p.manualKm == null ? '' : p.manualKm);
   sheet.getRange(row, TRIP.tolls).setValue(p.tolls || 0);
   sheet.getRange(row, TRIP.parking).setValue(p.parking || 0);
-  sheet.getRange(row, TRIP.people).setValue(isTaxi ? riders.length : 1 + riders.length);
+  sheet.getRange(row, TRIP.people).setValue(isTaxi ? paying.length : 1 + paying.length);
   sheet.getRange(row, TRIP.notes).setValue(p.notes || '');
   sheet.getRange(row, TRIP.riders).setValue(riders.join(', '));
   sheet.getRange(row, TRIP.tripType).setValue(p.tripType || 'Round trip');
@@ -1172,6 +1212,10 @@ function rebuildRideDays_(ss) {
         (!periodEnd || dayKey <= periodEnd);
 
       occupants.forEach(function (name) {
+        // Guests ride free: no days, no costs, and no row of their own below.
+        // person() would otherwise mint an entry for any name at all, which is
+        // how a free-text guest used to end up billed on the Ride Days tab.
+        if (isFreeRider_(byName[String(name).trim()])) return;
         var p = person(name);
         if (!p) return;
         // Fuel is owed whenever it was burnt; the day rate only inside the

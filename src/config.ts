@@ -5,7 +5,7 @@
  * When the deployed backend reports less than this, the app says so on every
  * screen rather than letting writes vanish into a stale deployment.
  */
-export const EXPECTED_CODE_VERSION = 12;
+export const EXPECTED_CODE_VERSION = 13;
 
 /**
  * The fast path on the reserve screen: the trips this group actually makes.
