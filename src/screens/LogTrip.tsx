@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import type { Place, RideRequest, Spot, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
-import { localDateInput } from '../lib/dates';
+import { clockTime, localDateInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
 import { DestinationPicker, type DestinationValue } from './DestinationPicker';
 import { RiderPicker } from './RiderPicker';
@@ -24,6 +24,9 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
 
   const [mode, setMode] = useState<Mode>('spot');
   const [date, setDate] = useState(localDateInput(new Date()));
+  const [time, setTime] = useState(clockTime(new Date()));
+  const [origin, setOrigin] = useState('Quinta');
+  const [boards, setBoards] = useState(false);
   const [destinationValue, setDestinationValue] = useState<DestinationValue>({
     place: '',
     activity: '',
@@ -53,9 +56,10 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
         odoEnd: mode === 'odometer' ? numOrNull(odoEnd) : null,
         spot: mode === 'spot' ? spot : null,
         tripType,
+        taxi,
         manualKm: mode === 'manual' ? numOrNull(manualKm) : null,
       }),
-    [mode, odoStart, odoEnd, spot, tripType, manualKm],
+    [mode, odoStart, odoEnd, spot, tripType, manualKm, taxi],
   );
 
   const cost = settings
@@ -66,6 +70,7 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
           parking: numOrNull(parking) ?? 0,
           riderCount: riders.length,
           taxi,
+          boards,
         },
         settings,
       )
@@ -80,7 +85,7 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
     await queueOp('completeTrip', {
       // Keep the time of day so two trips on one date still read in order, but
       // let the chosen day win — people log yesterday's drive over breakfast.
-      date: new Date(`${date}T${new Date().toTimeString().slice(0, 8)}`).toISOString(),
+      date: new Date(`${date}T${time}`).toISOString(),
       driver: me,
       destination: mode === 'spot' ? destinationValue.place : '',
       activity: mode === 'spot' ? destinationValue.activity : '',
@@ -95,6 +100,8 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
       reservationId: reservationId ?? '',
       taxi,
       rideRequestId: ride?.id ?? '',
+      origin,
+      boards,
     });
     onDone(cost, destination);
   };
@@ -105,13 +112,33 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
       <h1>Log a trip</h1>
       <div class="spacer" />
 
+      <div class="row">
+        <label class="field">
+          <span>Date</span>
+          <input
+            type="date"
+            value={date}
+            max={localDateInput(new Date())}
+            onInput={(e) => setDate((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="field">
+          <span>Time</span>
+          <input
+            type="time"
+            value={time}
+            onInput={(e) => setTime((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      </div>
+
       <label class="field">
-        <span>When</span>
+        <span>Starting from</span>
         <input
-          type="date"
-          value={date}
-          max={localDateInput(new Date())}
-          onInput={(e) => setDate((e.target as HTMLInputElement).value)}
+          type="text"
+          value={origin}
+          placeholder="Quinta"
+          onInput={(e) => setOrigin((e.target as HTMLInputElement).value)}
         />
       </label>
 
@@ -189,6 +216,18 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
       )}
 
       <RiderPicker me={me} selected={riders} onChange={setRiders} />
+
+      <div class="field">
+        <span>Boards on the roof?</span>
+        <div class="segmented">
+          <button aria-pressed={!boards} onClick={() => setBoards(false)}>
+            No
+          </button>
+          <button aria-pressed={boards} onClick={() => setBoards(true)}>
+            Yes
+          </button>
+        </div>
+      </div>
 
       <div class="field">
         <span>Who's paying?</span>

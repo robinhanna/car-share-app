@@ -111,6 +111,9 @@ export interface Trip {
   activity: string;
   /** Driver was doing a favour: they pay nothing and are charged no day. */
   taxi: boolean;
+  origin: string;
+  boards: boolean;
+  rideRequestId: string;
 }
 
 export type RideStatus = 'open' | 'claimed' | 'done' | 'cancelled';
@@ -156,6 +159,8 @@ export type OpName =
   | 'requestRide'
   | 'claimRide'
   | 'cancelRide'
+  | 'logRide'
+  | 'deleteTrip'
   | 'resetTestData';
 
 export interface CompleteTripPayload {
@@ -174,6 +179,17 @@ export interface CompleteTripPayload {
   activity: string;
   taxi: boolean;
   rideRequestId: string;
+  origin: string;
+  boards: boolean;
+}
+
+export interface LogRidePayload {
+  id: string;
+  date: string;
+}
+
+export interface DeleteTripPayload {
+  tripId: string;
 }
 
 export interface RequestRidePayload {
@@ -249,6 +265,8 @@ export type OpPayload =
   | RequestRidePayload
   | ClaimRidePayload
   | CancelRidePayload
+  | LogRidePayload
+  | DeleteTripPayload
   | ResetPayload;
 
 export interface Op {

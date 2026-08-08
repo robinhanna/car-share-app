@@ -28,6 +28,7 @@ var TRIP = {
   tolls: 7, parking: 8, total: 9, people: 10, perPerson: 11, notes: 12,
   id: 13, riders: 14, tripType: 15, reservationId: 16, clientId: 17,
   odoStart: 18, odoEnd: 19, activity: 20, taxi: 21, rideRequestId: 22,
+  origin: 23, boards: 24,
 };
 
 var RIDE_REQ = {
@@ -73,7 +74,11 @@ var ADMIN_NAME = 'Robin';
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'bootstrap';
   try {
-    if (action === 'bootstrap') return json_({ ok: true, data: bootstrap_() });
+    if (action === 'bootstrap') {
+      // Throttled inside, so this costs nothing on most requests.
+      try { sweepDueRides_(); } catch (err) { Logger.log('Sweep failed: ' + err); }
+      return json_({ ok: true, data: bootstrap_() });
+    }
     return json_({ ok: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -95,6 +100,7 @@ function doPost(e) {
     if (!ops.length) return json_({ ok: true, results: [] });
 
     lock.waitLock(30000);
+    try { sweepDueRides_(); } catch (err) { Logger.log('Sweep failed: ' + err); }
 
     var results = ops.map(function (op) {
       try {
@@ -123,6 +129,8 @@ function applyOp_(op) {
     case 'requestRide': return requestRide_(op.clientId, op.payload || {});
     case 'claimRide': return claimRide_(op.payload || {});
     case 'cancelRide': return cancelRide_(op.payload || {});
+    case 'logRide': return logRide_(op.clientId, op.payload || {});
+    case 'deleteTrip': return deleteTrip_(op.payload || {});
     case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
   }
@@ -370,7 +378,7 @@ function readTrips_(ss) {
   var s = ss.getSheetByName(SHEETS.trips);
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
-  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.rideRequestId).getValues()
+  var rows = s.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.boards).getValues()
     .filter(function (r) { return String(r[TRIP.driver - 1]).trim() !== ''; });
   return rows.map(function (r) {
     return {
@@ -389,6 +397,9 @@ function readTrips_(ss) {
       tripType: String(r[TRIP.tripType - 1] || ''),
       activity: String(r[TRIP.activity - 1] || ''),
       taxi: String(r[TRIP.taxi - 1]).trim().toLowerCase() === 'yes',
+      origin: String(r[TRIP.origin - 1] || ''),
+      boards: String(r[TRIP.boards - 1]).trim().toLowerCase() === 'yes',
+      rideRequestId: String(r[TRIP.rideRequestId - 1] || ''),
     };
   });
 }
@@ -430,6 +441,8 @@ function completeTrip_(clientId, p) {
   sheet.getRange(row, TRIP.activity).setValue(p.activity || '');
   sheet.getRange(row, TRIP.taxi).setValue(isTaxi ? 'Yes' : 'No');
   sheet.getRange(row, TRIP.rideRequestId).setValue(p.rideRequestId || '');
+  sheet.getRange(row, TRIP.origin).setValue(p.origin || '');
+  sheet.getRange(row, TRIP.boards).setValue(p.boards ? 'Yes' : 'No');
 
   if (p.reservationId) closeReservation_(ss, p.reservationId, 'completed', tripId);
   if (p.rideRequestId) closeRideRequest_(ss, p.rideRequestId, 'done', '', tripId);
@@ -651,7 +664,41 @@ function claimRide_(p) {
 
   sheet.getRange(found, RIDE_REQ.status).setValue('claimed');
   sheet.getRange(found, RIDE_REQ.driver).setValue(p.driver || '');
+
+  // Picking someone up is exactly the kind of thing karma is for, so it lands
+  // without anyone having to remember to tap it.
+  awardLiftKarma_(ss, p.id, p.driver);
+
   return { id: p.id, driver: p.driver, status: 'claimed' };
+}
+
+/** Karma for driving someone, keyed to the ride so it can be taken back. */
+function awardLiftKarma_(ss, rideId, driver) {
+  if (!driver) return;
+  var action = liftKarmaAction_(ss);
+  logKarma_('ride:' + rideId, {
+    date: new Date(),
+    name: driver,
+    action: action.action,
+    points: action.points,
+  });
+}
+
+/** Uses whatever Robin has called it on the Karma Actions tab. */
+function liftKarmaAction_(ss) {
+  var actions = readKarmaActions_(ss);
+  for (var i = 0; i < actions.length; i++) {
+    if (/dr(o|i)ve|lift|taxi/i.test(actions[i].action)) return actions[i];
+  }
+  return { action: 'Drove others around', points: 1 };
+}
+
+/** Undoes the karma when a claimed lift is called off. */
+function removeLiftKarma_(ss, rideId) {
+  var sheet = ss.getSheetByName(SHEETS.karma);
+  var rows = findByClientId_(sheet, KARMA.clientId);
+  var row = rows['ride:' + rideId];
+  if (row) sheet.getRange(row, 1, 1, KARMA.clientId).clearContent();
 }
 
 function cancelRide_(p) {
@@ -659,7 +706,145 @@ function cancelRide_(p) {
   if (!closeRideRequest_(ss, p.id, 'cancelled', '', '')) {
     throw new Error('Ride request not found: ' + p.id);
   }
+  removeLiftKarma_(ss, p.id);
+  rebuildRideDays_(ss);
   return { id: p.id, status: 'cancelled' };
+}
+
+/**
+ * Logs a claimed lift outright, without anyone filling in a form.
+ *
+ * Everything needed is already on the request — who, where to, how many — and
+ * the distance comes from the same Places/Surf Spots lookup the trip form uses.
+ * A destination we can't price is left alone rather than logged at zero km,
+ * because a wrong number is worse than an absent one.
+ */
+function logRide_(clientId, p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var row = findRideRequest_(sheet, p.id);
+  if (!row) throw new Error('Ride request not found: ' + p.id);
+
+  var status = String(sheet.getRange(row, RIDE_REQ.status).getValue()).trim();
+  if (status === 'done') {
+    return { id: p.id, alreadyLogged: true, tripId: String(sheet.getRange(row, RIDE_REQ.tripId).getValue()) };
+  }
+  if (status === 'cancelled') return { id: p.id, cancelled: true };
+
+  var driver = String(sheet.getRange(row, RIDE_REQ.driver).getValue()).trim() || p.driver;
+  if (!driver) throw new Error('Nobody has claimed this lift yet');
+
+  var passengers = [String(sheet.getRange(row, RIDE_REQ.passenger).getValue()).trim()]
+    .concat(splitList_(sheet.getRange(row, RIDE_REQ.others).getValue()))
+    .filter(function (n) { return n && n !== driver; });
+  if (!passengers.length) throw new Error('This lift has no passengers');
+
+  var destination = String(sheet.getRange(row, RIDE_REQ.to).getValue()).trim();
+  if (!knownDistance_(ss, destination)) {
+    return { id: p.id, unknownDestination: destination };
+  }
+
+  return completeTrip_(clientId, {
+    date: p.date || new Date().toISOString(),
+    driver: driver,
+    destination: destination,
+    origin: String(sheet.getRange(row, RIDE_REQ.from).getValue()).trim(),
+    tripType: 'One-way',
+    riders: passengers,
+    taxi: true,
+    rideRequestId: p.id,
+    notes: String(sheet.getRange(row, RIDE_REQ.notes).getValue()).trim(),
+    tolls: 0,
+    parking: 0,
+  });
+}
+
+/** Can the sheet price a trip to this place? */
+function knownDistance_(ss, name) {
+  if (!name) return false;
+  var spots = readSpots_(ss);
+  for (var i = 0; i < spots.length; i++) if (spots[i].name === name) return true;
+  var places = readPlaces_(ss);
+  for (var j = 0; j < places.length; j++) {
+    if (places[j].name === name && places[j].oneWayKm > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Logs claimed lifts nobody got round to logging.
+ *
+ * Two hours after the pickup time a lift is assumed to have happened, unless it
+ * was cancelled. Runs off the back of ordinary requests rather than a
+ * time-driven trigger: a trigger would need a new OAuth scope, which means
+ * re-authorising the whole web app, and the group opens this often enough that
+ * a sweep on request is timely enough.
+ */
+var SWEEP_EVERY_MS = 5 * 60 * 1000;
+var LIFT_GRACE_MS = 2 * 60 * 60 * 1000;
+
+function sweepDueRides_(ss) {
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty('lastSweep') || 0);
+  if (Date.now() - last < SWEEP_EVERY_MS) return { skipped: true };
+  props.setProperty('lastSweep', String(Date.now()));
+
+  ss = ss || SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  if (!sheet) return { logged: 0 };
+  var lastRow = sheet.getLastRow();
+  if (lastRow < FIRST_DATA_ROW) return { logged: 0 };
+
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, lastRow - 2, 12).getValues();
+  var logged = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[RIDE_REQ.status - 1]).trim() !== 'claimed') continue;
+
+    var when = r[RIDE_REQ.when - 1];
+    if (!(when instanceof Date)) continue;
+    if (Date.now() - when.getTime() < LIFT_GRACE_MS) continue;
+
+    try {
+      var result = logRide_('autolog:' + r[RIDE_REQ.id - 1], { id: String(r[RIDE_REQ.id - 1]) });
+      if (result && !result.unknownDestination) logged++;
+    } catch (err) {
+      Logger.log('Auto-log skipped for ride ' + r[RIDE_REQ.id - 1] + ': ' + err);
+    }
+  }
+
+  return { logged: logged };
+}
+
+/** Removes a logged trip. Admin-only in the UI; the row goes, the charge goes. */
+function deleteTrip_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.trips);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) throw new Error('No trips logged');
+
+  var ids = sheet.getRange(FIRST_DATA_ROW, TRIP.id, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(p.tripId)) continue;
+    var row = FIRST_DATA_ROW + i;
+
+    // Reopen the lift if this trip came from one, so it isn't silently lost.
+    var rideId = String(sheet.getRange(row, TRIP.rideRequestId).getValue()).trim();
+    if (rideId) closeRideRequest_(ss, rideId, 'cancelled', '', '');
+
+    [TRIP.date, TRIP.driver, TRIP.destination, TRIP.manualKm, TRIP.tolls, TRIP.parking,
+     TRIP.people, TRIP.notes, TRIP.id, TRIP.riders, TRIP.tripType, TRIP.reservationId,
+     TRIP.clientId, TRIP.odoStart, TRIP.odoEnd, TRIP.activity, TRIP.taxi,
+     TRIP.rideRequestId, TRIP.origin, TRIP.boards].forEach(function (col) {
+      sheet.getRange(row, col).clearContent();
+    });
+
+    SpreadsheetApp.flush();
+    rebuildRideDays_(ss);
+    return { tripId: p.tripId, row: row, deleted: true };
+  }
+  throw new Error('Trip not found: ' + p.tripId);
 }
 
 function closeRideRequest_(ss, id, status, driver, tripId) {
@@ -762,7 +947,7 @@ function rebuildRideDays_(ss) {
   var trips = ss.getSheetByName(SHEETS.trips);
   var lastTrip = trips.getLastRow();
   if (lastTrip >= FIRST_DATA_ROW) {
-    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.rideRequestId).getValues();
+    var rows = trips.getRange(FIRST_DATA_ROW, 1, lastTrip - 2, TRIP.boards).getValues();
     rows.forEach(function (r) {
       var driver = String(r[TRIP.driver - 1]).trim();
       if (!driver) return;

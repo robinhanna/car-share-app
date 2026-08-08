@@ -5,6 +5,11 @@ export function localDateTimeInput(d: Date): string {
   return `${localDateInput(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** `HH:mm` in the phone's own timezone, for time inputs. */
+export function clockTime(d: Date): string {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** `YYYY-MM-DD` in the phone's own timezone, for date inputs. */
 export function localDateInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

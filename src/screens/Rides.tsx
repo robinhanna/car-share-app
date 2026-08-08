@@ -112,9 +112,26 @@ export function Rides({ me, onDrive }: Props) {
                 </button>
               )}
               {r.status === 'claimed' && r.driver === me && (
-                <button class="btn btn--inline" onClick={() => onDrive(r)}>
-                  Log it
-                </button>
+                <span class="row-actions">
+                  {/* One tap logs it: the request already knows the passengers,
+                      the destination and the distance. The form is only there
+                      for the odd case that needs tolls or a correction. */}
+                  <button
+                    class="btn btn--inline"
+                    onClick={() =>
+                      void queueOp('logRide', { id: r.id, date: new Date().toISOString() })
+                    }
+                  >
+                    Log it
+                  </button>
+                  <button
+                    class="icon-btn"
+                    aria-label="Log with details"
+                    onClick={() => onDrive(r)}
+                  >
+                    ⋯
+                  </button>
+                </span>
               )}
               {r.status === 'claimed' && r.driver !== me && (
                 <span class="muted">{r.driver} has it</span>

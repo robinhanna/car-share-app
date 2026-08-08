@@ -13,6 +13,7 @@ import {
   totalRiderDays,
   tripCost,
   tripDistanceKm,
+  loadFactor,
 } from './cost';
 
 // Paid period 7–31 August: €375 rental + €20 pickup, three members.
@@ -26,8 +27,8 @@ const settings: Settings = {
   totalMemberDays: 75,
   dailyRate: 395 / 75,
   fuelPrice: 2.03,
-  consumption: 7.5,
-  costPerKm: costPerKm(2.03, 7.5),
+  consumption: 6.0,
+  costPerKm: costPerKm(2.03, 6.0),
   riderDays: 0,
   dayRate: 395 / 75,
 };
@@ -73,22 +74,60 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
   tripType: 'Round trip',
   activity: '',
   taxi: false,
+  origin: 'Quinta',
+  boards: false,
+  rideRequestId: '',
   ...over,
 });
 
 describe('fuel maths', () => {
-  it('matches Settings!B11', () => {
-    expect(costPerKm(2.03, 7.5)).toBeCloseTo(0.15225, 5);
+  it('matches Settings!B11 at the corrected consumption', () => {
+    expect(costPerKm(2.03, 6.0)).toBeCloseTo(0.1218, 5);
   });
 
   it('prices a Zavial round trip the way the sheet does', () => {
     const distance = tripDistanceKm({ spot: zavial, tripType: 'Round trip' });
     expect(distance).toBe(28);
-    expect(fuelCost(distance, settings)).toBeCloseTo(4.26, 2);
+    expect(fuelCost(distance, settings)).toBeCloseTo(3.41, 2);
+  });
+
+  // The trip that started all this: the app said EUR27.40, which was 7.5 L/100km.
+  it('prices the 180km Faro run at the measured consumption', () => {
+    expect(fuelCost(180, settings)).toBeCloseTo(21.92, 2);
+    expect(180 * costPerKm(2.03, 7.5)).toBeCloseTo(27.40, 2);
   });
 
   it('halves the distance for a one-way', () => {
     expect(tripDistanceKm({ spot: zavial, tripType: 'One-way' })).toBe(14);
+  });
+
+  it('keeps a one-way lift at the full round-trip distance', () => {
+    // The passenger gets out at Zavial; the driver still drives home.
+    expect(tripDistanceKm({ spot: zavial, tripType: 'One-way', taxi: true })).toBe(28);
+  });
+});
+
+describe('load factor', () => {
+  it('is 1 for a driver alone with nothing on the roof', () => {
+    expect(loadFactor(1, false)).toBe(1);
+  });
+
+  it('adds 3% a head and 8% for boards', () => {
+    expect(loadFactor(4, false)).toBeCloseTo(1.09, 5);
+    expect(loadFactor(1, true)).toBeCloseTo(1.08, 5);
+    expect(loadFactor(4, true)).toBeCloseTo(1.17, 5);
+  });
+
+  it('never runs away — capped at +25%', () => {
+    expect(loadFactor(20, true)).toBe(1.25);
+  });
+
+  it('feeds through to the trip cost', () => {
+    const light = tripCost({ distanceKm: 28, riderCount: 0 }, settings);
+    const loaded = tripCost({ distanceKm: 28, riderCount: 3, boards: true }, settings);
+    expect(loaded.total / light.total).toBeCloseTo(1.17, 5);
+    // Shared four ways, a fuller car is still cheaper each.
+    expect(loaded.perPerson).toBeLessThan(light.perPerson);
   });
 });
 
@@ -114,8 +153,9 @@ describe('trip split', () => {
   it('divides the trip total between driver and riders', () => {
     const cost = tripCost({ distanceKm: 28, tolls: 0, parking: 3, riderCount: 2 }, settings);
     expect(cost.people).toBe(3);
-    expect(cost.total).toBeCloseTo(7.26, 2);
-    expect(cost.perPerson).toBeCloseTo(2.42, 2);
+    // 28km x EUR0.1218 x 1.06 for three aboard, plus EUR3 parking.
+    expect(cost.total).toBeCloseTo(6.615, 3);
+    expect(cost.perPerson).toBeCloseTo(2.205, 3);
   });
 
   it('charges the whole trip to a driver travelling alone', () => {
@@ -245,7 +285,7 @@ describe('taxi trips', () => {
   it('divides the cost between the passengers and spares the driver', () => {
     const cost = tripCost({ distanceKm: 28, riderCount: 2, taxi: true }, settings);
     expect(cost.people).toBe(2);
-    expect(cost.perPerson).toBeCloseTo(2.13, 2);
+    expect(cost.perPerson).toBeCloseTo(1.81, 2);
   });
 
   it('charges the driver nothing on their own taxi run', () => {

@@ -230,7 +230,7 @@ function setupSettings_(ss) {
  * the Sheet is the source of truth again and Robin can edit any of it without
  * a later setupSheet() run stamping over him.
  */
-var CONFIG_VERSION = 3;
+var CONFIG_VERSION = 4;
 
 function migrateConfig_(ss) {
   var props = PropertiesService.getScriptProperties();
@@ -245,6 +245,12 @@ function migrateConfig_(ss) {
   s.getRange('B4').setValue(new Date(2026, 7, 7));      // 7 August
   s.getRange('B5').setValue(new Date(2026, 7, 31));     // 31 August
   s.getRange('B14').setValue(20);                       // Uber to collect the car
+
+  // 7.5 L/100km was a guess from before anyone had driven the car. Robin's tank
+  // reading — 224 km on just over a quarter — works out around 5.6 on a mostly
+  // motorway run, so 6.0 is his figure for the mix of driving round Almádena.
+  // Everything logged before this was overcharged by about a quarter.
+  s.getRange('B10').setValue(6.0);
 
   var members = ss.getSheetByName(SHEETS.members);
   var rows = memberRows_();
@@ -514,6 +520,8 @@ function setupTripLog_(ss) {
     [TRIP.activity, 'Activity'],
     [TRIP.taxi, 'Taxi run?'],
     [TRIP.rideRequestId, 'Ride Request ID'],
+    [TRIP.origin, 'From'],
+    [TRIP.boards, 'Boards?'],
   ];
   headers.forEach(function (h) {
     var cell = sheet.getRange(2, h[0]);
@@ -528,6 +536,8 @@ function setupTripLog_(ss) {
     .setAllowInvalid(false)
     .build();
   sheet.getRange(FIRST_DATA_ROW, TRIP.tripType, rows, 1).setDataValidation(tripType);
+
+  writeFuelFormulas_(sheet, Math.max(sheet.getLastRow(), 24));
 
   // Default the trip type first, so the distance formula has something to read
   // when it recalculates.
@@ -578,7 +588,11 @@ function writeDistanceFormulas_(sheet, lastRow, sep) {
   for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
     // Odometer wins; then a Surf Spots lookup; then Places, so a trip to Lagos
     // gets its distance too; then whatever km was typed by hand.
-    var direction = '*IF($O' + r + '="One-way"' + sep + '1' + sep + '2)';
+    //
+    // A one-way lift still doubles: the driver comes back empty, so the car
+    // covered the return leg even though the passenger didn't.
+    var direction = '*IF(AND($O' + r + '="One-way"' + sep + '$U' + r + '<>"Yes")' +
+      sep + '1' + sep + '2)';
     formulas.push([
       '=IF(AND($R' + r + '=""' + sep + '$S' + r + '="")' + sep +
         'IF($C' + r + '=""' + sep + '""' + sep +
@@ -597,6 +611,25 @@ function writeDistanceFormulas_(sheet, lastRow, sep) {
   } catch (err) {
     Logger.log('setFormulas failed with "' + sep + '": ' + err);
     return false;
+  }
+}
+
+/**
+ * Fuel = distance × cost-per-km × how loaded the car was.
+ *
+ * A full car with boards on the roof really does burn more: roughly 3% per
+ * passenger for the weight and 8% for the drag of boards overhead. Capped at
+ * +25% so a packed car never turns into a surcharge nobody recognises.
+ */
+function writeFuelFormulas_(sheet, lastRow) {
+  for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    // Column J is the headcount the cost splits between, which on a lift
+    // excludes the driver — but the car still carried them, so add them back
+    // before working out how loaded it was.
+    var onboard = '($J' + r + '+IF($U' + r + '="Yes";1;0))';
+    var load = 'MIN(1.25;1+0.03*MAX(' + onboard + '-1;0)+0.08*IF($X' + r + '="Yes";1;0))';
+    setFormulaVerified_(sheet.getRange(r, TRIP.fuel),
+      '=IF($E' + r + '="";"";IFERROR($E' + r + '*Settings!$B$11*' + load + ';0))');
   }
 }
 

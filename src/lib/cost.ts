@@ -18,6 +18,18 @@ export interface DistanceInput {
   spot?: Spot | null;
   tripType?: TripType;
   manualKm?: number | null;
+  /** A lift: the driver returns empty, so the car covers the return leg too. */
+  taxi?: boolean;
+}
+
+/**
+ * How much more fuel a loaded car burns. Roughly 3% per passenger for the
+ * weight and 8% for the drag of boards on the roof, capped at +25%.
+ * Mirrors the load term in the Trip Log's fuel formula.
+ */
+export function loadFactor(people: number, boards: boolean): number {
+  const factor = 1 + 0.03 * Math.max(people - 1, 0) + (boards ? 0.08 : 0);
+  return Math.min(factor, 1.25);
 }
 
 /**
@@ -25,13 +37,16 @@ export interface DistanceInput {
  * honouring the one-way / round-trip toggle, then manually typed km.
  */
 export function tripDistanceKm(input: DistanceInput): number {
-  const { odoStart, odoEnd, spot, tripType = 'Round trip', manualKm } = input;
+  const { odoStart, odoEnd, spot, tripType = 'Round trip', manualKm, taxi } = input;
 
   if (isNum(odoStart) && isNum(odoEnd)) {
     return Math.max(odoEnd - odoStart, 0);
   }
   if (spot) {
-    return spot.oneWayKm * (tripType === 'One-way' ? 1 : 2);
+    // A one-way lift still counts double: the passenger gets out, the driver
+    // drives home empty, and the car burnt the fuel for both legs.
+    const legs = tripType === 'One-way' && !taxi ? 1 : 2;
+    return spot.oneWayKm * legs;
   }
   return isNum(manualKm) ? manualKm : 0;
 }
@@ -48,6 +63,8 @@ export interface TripCostInput {
   riderCount: number;
   /** A favour, not a shared outing: the driver pays nothing. */
   taxi?: boolean;
+  /** Boards on the roof — real drag, real fuel. */
+  boards?: boolean;
 }
 
 export interface TripCost {
@@ -69,14 +86,18 @@ export interface TripCost {
 export function tripCost(input: TripCostInput, settings: Settings): TripCost {
   const tolls = input.tolls ?? 0;
   const parking = input.parking ?? 0;
-  const fuel = fuelCost(input.distanceKm, settings);
-  const total = fuel + tolls + parking;
 
   // On a taxi run the cost divides between the passengers only. With nobody in
   // the back there is no favour being done, so it falls back to a normal split
   // rather than dividing by zero.
   const isTaxi = !!input.taxi && input.riderCount > 0;
   const people = isTaxi ? input.riderCount : Math.max(1 + input.riderCount, 1);
+
+  // The driver's weight counts towards the load even on a lift they aren't
+  // paying for — the car still carried them.
+  const onboard = 1 + input.riderCount;
+  const fuel = fuelCost(input.distanceKm, settings) * loadFactor(onboard, !!input.boards);
+  const total = fuel + tolls + parking;
 
   return {
     distanceKm: input.distanceKm,

@@ -478,6 +478,36 @@ h1 + .spacer + .card {
   flex: none;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.icon-btn--danger {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  border-color: var(--rust);
+  color: var(--rust);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: var(--ink);
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
 .chev {
   color: var(--ink-soft);
   font-weight: 400;

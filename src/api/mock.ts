@@ -1,3 +1,4 @@
+import { loadFactor } from '../lib/cost';
 import type {
   Bootstrap,
   CompleteTripPayload,
@@ -11,6 +12,8 @@ import type {
   RequestRidePayload,
   ClaimRidePayload,
   CancelRidePayload,
+  LogRidePayload,
+  DeleteTripPayload,
 } from './types';
 
 /**
@@ -20,7 +23,7 @@ import type {
  * without API_URL.
  */
 const fuelPrice = 2.03;
-const consumption = 7.5;
+const consumption = 6.0;
 
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
@@ -200,13 +203,14 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
         t.odoStart != null && t.odoEnd != null
           ? Math.max(t.odoEnd - t.odoStart, 0)
           : oneWayKm
-            ? oneWayKm * (t.tripType === 'One-way' ? 1 : 2)
+            ? oneWayKm * (t.tripType === 'One-way' && !t.taxi ? 1 : 2)
             : (t.manualKm ?? 0);
 
-      const fuel = distanceKm * bootstrap.settings.costPerKm;
-      const total = fuel + t.tolls + t.parking;
       const isTaxi = t.taxi && t.riders.length > 0;
       const people = isTaxi ? t.riders.length : 1 + t.riders.length;
+      const load = loadFactor(1 + t.riders.length, t.boards);
+      const fuel = distanceKm * bootstrap.settings.costPerKm * load;
+      const total = fuel + t.tolls + t.parking;
 
       bootstrap = {
         ...bootstrap,
@@ -228,12 +232,83 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             tripType: t.tripType,
             activity: t.activity,
             taxi: !!isTaxi,
+            origin: t.origin,
+            boards: t.boards,
+            rideRequestId: t.rideRequestId,
           },
         ],
         rideRequests: bootstrap.rideRequests.map((r) =>
           r.id === t.rideRequestId ? { ...r, status: 'done' as const } : r,
         ),
       };
+    }
+
+    // Mirrors logRide_: logs a claimed lift outright, doubled distance and all.
+    if (op.op === 'logRide') {
+      const { id, date } = op.payload as LogRidePayload;
+      const ride = bootstrap.rideRequests.find((r) => r.id === id);
+      if (ride && ride.status === 'claimed') {
+        const place = bootstrap.places.find((pl) => pl.name === ride.to);
+        const spotHit = bootstrap.spots.find((sp) => sp.name === ride.to);
+        const oneWayKm = spotHit?.oneWayKm ?? place?.oneWayKm ?? 0;
+        if (oneWayKm > 0) {
+          const passengers = [ride.passenger, ...ride.others].filter((n) => n !== ride.driver);
+          const distanceKm = oneWayKm * 2;
+          const load = loadFactor(1 + passengers.length, false);
+          const fuel = distanceKm * bootstrap.settings.costPerKm * load;
+          bootstrap = {
+            ...bootstrap,
+            recentTrips: [
+              ...bootstrap.recentTrips,
+              {
+                id: op.clientId,
+                date,
+                driver: ride.driver,
+                destination: ride.to,
+                distanceKm,
+                fuelCost: fuel,
+                tolls: 0,
+                parking: 0,
+                total: fuel,
+                people: passengers.length,
+                perPerson: fuel / passengers.length,
+                riders: passengers,
+                tripType: 'One-way',
+                activity: '',
+                taxi: true,
+                origin: ride.from,
+                boards: false,
+                rideRequestId: ride.id,
+              },
+            ],
+            rideRequests: bootstrap.rideRequests.map((r) =>
+              r.id === id ? { ...r, status: 'done' as const } : r,
+            ),
+          };
+        }
+      }
+    }
+
+    if (op.op === 'deleteTrip') {
+      const { tripId } = op.payload as DeleteTripPayload;
+      bootstrap = {
+        ...bootstrap,
+        recentTrips: bootstrap.recentTrips.filter((t) => t.id !== tripId),
+      };
+    }
+
+    if (op.op === 'claimRide') {
+      const { id, driver } = op.payload as ClaimRidePayload;
+      const action = bootstrap.karmaActions.find((a) => /dr(o|i)ve|lift|taxi/i.test(a.action));
+      if (action && bootstrap.rideRequests.some((r) => r.id === id && r.status === 'open')) {
+        bootstrap = {
+          ...bootstrap,
+          karmaLog: [
+            ...bootstrap.karmaLog,
+            { date: new Date().toISOString(), name: driver, action: action.action, points: action.points },
+          ],
+        };
+      }
     }
 
     if (op.op === 'requestRide') {
