@@ -109,6 +109,8 @@ export interface Trip {
   riders: string[];
   tripType: TripType;
   activity: string;
+  /** Empty on trips read from a deployment older than v11, which never sent it. */
+  notes: string;
   /** Driver was doing a favour: they pay nothing and are charged no day. */
   taxi: boolean;
   origin: string;

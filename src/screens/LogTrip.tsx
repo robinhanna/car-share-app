@@ -56,7 +56,10 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const [taxi, setTaxi] = useState(trip ? trip.taxi : !!ride);
   const [tolls, setTolls] = useState(trip?.tolls ? String(trip.tolls) : '');
   const [parking, setParking] = useState(trip?.parking ? String(trip.parking) : '');
-  const [notes, setNotes] = useState('');
+  // Editing used to start this empty, so saving a correction wiped whatever note
+  // was on the trip. A booking's or a lift's note carries in too — it was
+  // written about this same journey.
+  const [notes, setNotes] = useState(trip?.notes ?? reservation?.notes ?? ride?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
   // The distance can come from either table — a surf spot or a town in Places.

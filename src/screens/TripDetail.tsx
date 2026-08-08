@@ -33,6 +33,7 @@ export function TripDetail({ trip, me, onEdit, onDeleted }: Props) {
   push('Boards on the roof', trip.boards ? 'Yes' : '');
   push('Tolls', trip.tolls ? euro(trip.tolls) : '');
   push('Parking', trip.parking ? euro(trip.parking) : '');
+  push('Notes', trip.notes);
 
   const when = trip.until
     ? `${timeLabel(trip.date)} – ${timeLabel(trip.until)}`

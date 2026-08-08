@@ -17,7 +17,7 @@
  * bootstrap returns this number so the app can say so out loud, and
  * verifyInstall() compares it against what setup.gs expects.
  */
-var CODE_VERSION = 10;
+var CODE_VERSION = 11;
 
 var SHEETS = {
   settings: 'Settings',
@@ -414,6 +414,10 @@ function readTrips_(ss) {
       riders: splitList_(r[TRIP.riders - 1]),
       tripType: String(r[TRIP.tripType - 1] || ''),
       activity: String(r[TRIP.activity - 1] || ''),
+      // Written since the first version, never read back — so a note you typed
+      // landed in column L and then vanished from the app, which looks exactly
+      // like it was never saved.
+      notes: String(r[TRIP.notes - 1] || ''),
       taxi: String(r[TRIP.taxi - 1]).trim().toLowerCase() === 'yes',
       origin: String(r[TRIP.origin - 1] || ''),
       until: iso_(r[TRIP.until - 1]),

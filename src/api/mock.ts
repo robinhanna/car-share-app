@@ -250,6 +250,7 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             riders: t.riders,
             tripType: t.tripType,
             activity: t.activity,
+            notes: t.notes,
             taxi: !!isTaxi,
             origin: t.origin,
             boards: t.boards,
@@ -295,6 +296,7 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
                 riders: passengers,
                 tripType: 'One-way',
                 activity: '',
+                notes: ride.notes,
                 taxi: true,
                 origin: ride.from,
                 boards: false,
@@ -332,6 +334,10 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
             date: e.date,
             destination: e.destination,
             activity: e.activity,
+            // editTrip_ overwrites the cell with whatever the client sends, so
+            // mirror that rather than letting `...t` quietly preserve the old
+            // value — that difference hid the form wiping notes on every edit.
+            notes: e.notes,
             distanceKm,
             fuelCost: fuel,
             tolls: e.tolls,

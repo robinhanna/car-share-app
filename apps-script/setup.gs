@@ -833,7 +833,7 @@ function showToken() {
  * versions ago — which is the failure that keeps happening, because pasting and
  * deploying are separate steps. This constant catches that.
  */
-var EXPECTED_CODE_VERSION = 10;
+var EXPECTED_CODE_VERSION = 11;
 
 function verifyInstall() {
   var required = [

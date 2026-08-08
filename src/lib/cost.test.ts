@@ -73,6 +73,7 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
   riders: [],
   tripType: 'Round trip',
   activity: '',
+  notes: '',
   taxi: false,
   origin: 'Quinta',
   boards: false,
