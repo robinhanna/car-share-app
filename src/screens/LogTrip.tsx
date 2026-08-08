@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
-import type { Place, RideRequest, Spot, TripType } from '../api/types';
+import type { Place, RideRequest, Spot, Trip, TripType } from '../api/types';
 import { euro, km, tripCost, tripDistanceKm, type TripCost } from '../lib/cost';
 import { clockTime, localDateInput } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
@@ -11,36 +11,43 @@ interface Props {
   reservationId?: string;
   /** Set when this trip is fulfilling someone's ride request. */
   ride?: RideRequest;
+  /** Set when correcting a trip that's already logged. */
+  trip?: Trip;
   onDone: (cost: TripCost, destination: string) => void;
 }
 
 type Mode = 'spot' | 'odometer' | 'manual';
 
-export function LogTrip({ me, reservationId, ride, onDone }: Props) {
+export function LogTrip({ me, reservationId, ride, trip, onDone }: Props) {
   const { bootstrap } = useApp();
   const spots = bootstrap?.spots ?? [];
   const places = bootstrap?.places ?? [];
   const settings = bootstrap?.settings;
 
-  const [mode, setMode] = useState<Mode>('spot');
-  const [date, setDate] = useState(localDateInput(new Date()));
-  const [time, setTime] = useState(clockTime(new Date()));
-  const [origin, setOrigin] = useState('Quinta');
-  const [boards, setBoards] = useState(false);
+  // Editing an existing trip starts from what was logged; a new one from now.
+  const when = trip ? new Date(trip.date) : new Date();
+
+  const [mode, setMode] = useState<Mode>(trip && !trip.destination ? 'manual' : 'spot');
+  const [date, setDate] = useState(localDateInput(when));
+  const [time, setTime] = useState(clockTime(when));
+  const [origin, setOrigin] = useState(trip?.origin || 'Quinta');
+  const [boards, setBoards] = useState(!!trip?.boards);
   const [destinationValue, setDestinationValue] = useState<DestinationValue>({
-    place: '',
-    activity: '',
+    place: trip?.destination ?? '',
+    activity: trip?.activity ?? '',
   });
-  const [tripType, setTripType] = useState<TripType>('Round trip');
-  const [manualKm, setManualKm] = useState('');
+  const [tripType, setTripType] = useState<TripType>(trip?.tripType ?? 'Round trip');
+  const [manualKm, setManualKm] = useState(
+    trip && !trip.destination ? String(trip.distanceKm) : '',
+  );
   const [odoStart, setOdoStart] = useState('');
   const [odoEnd, setOdoEnd] = useState('');
   const [riders, setRiders] = useState<string[]>(
-    ride ? [ride.passenger, ...ride.others] : [],
+    trip ? trip.riders : ride ? [ride.passenger, ...ride.others] : [],
   );
-  const [taxi, setTaxi] = useState(!!ride);
-  const [tolls, setTolls] = useState('');
-  const [parking, setParking] = useState('');
+  const [taxi, setTaxi] = useState(trip ? trip.taxi : !!ride);
+  const [tolls, setTolls] = useState(trip?.tolls ? String(trip.tolls) : '');
+  const [parking, setParking] = useState(trip?.parking ? String(trip.parking) : '');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -82,7 +89,8 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
   const save = async () => {
     if (!cost) return;
     setSaving(true);
-    await queueOp('completeTrip', {
+
+    const common = {
       // Keep the time of day so two trips on one date still read in order, but
       // let the chosen day win — people log yesterday's drive over breakfast.
       date: new Date(`${date}T${time}`).toISOString(),
@@ -97,19 +105,27 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
       tolls: numOrNull(tolls) ?? 0,
       parking: numOrNull(parking) ?? 0,
       notes,
-      reservationId: reservationId ?? '',
       taxi,
-      rideRequestId: ride?.id ?? '',
       origin,
       boards,
-    });
+    };
+
+    if (trip) {
+      await queueOp('editTrip', { ...common, tripId: trip.id, driver: trip.driver });
+    } else {
+      await queueOp('completeTrip', {
+        ...common,
+        reservationId: reservationId ?? '',
+        rideRequestId: ride?.id ?? '',
+      });
+    }
     onDone(cost, destination);
   };
 
   return (
     <>
-      <p class="kicker">Trip</p>
-      <h1>Log a trip</h1>
+      <p class="kicker">{trip ? 'Correcting' : 'Trip'}</p>
+      <h1>{trip ? 'Edit this trip' : 'Log a trip'}</h1>
       <div class="spacer" />
 
       <div class="row">
@@ -293,7 +309,7 @@ export function LogTrip({ me, reservationId, ride, onDone }: Props) {
       )}
 
       <button class="btn" disabled={!canSave} onClick={() => void save()}>
-        {saving ? 'Saving…' : 'Save trip'}
+        {saving ? 'Saving…' : trip ? 'Save changes' : 'Save trip'}
       </button>
     </>
   );

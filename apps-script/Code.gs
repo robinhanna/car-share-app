@@ -130,6 +130,7 @@ function applyOp_(op) {
     case 'claimRide': return claimRide_(op.payload || {});
     case 'cancelRide': return cancelRide_(op.payload || {});
     case 'logRide': return logRide_(op.clientId, op.payload || {});
+    case 'editTrip': return editTrip_(op.payload || {});
     case 'deleteTrip': return deleteTrip_(op.payload || {});
     case 'resetTestData': return resetTestData_(op.payload || {});
     default: throw new Error('Unknown op: ' + op.op);
@@ -163,8 +164,11 @@ function readSettings_(ss) {
     totalCost: num_(s.getRange('B15').getValue()),
     rentalCost: num_(s.getRange('B3').getValue()),
     extras: num_(s.getRange('B14').getValue()),
-    monthStart: iso_(s.getRange('B4').getValue()),
-    monthEnd: iso_(s.getRange('B5').getValue()),
+    // Plain yyyy-MM-dd in the sheet's own timezone. toISOString() would turn
+    // 7 August in Lisbon into "2026-08-06T23:00Z", and the client compares
+    // these against trip dates by string — an off-by-one on both ends.
+    monthStart: dateKey_(s.getRange('B4').getValue()),
+    monthEnd: dateKey_(s.getRange('B5').getValue()),
     totalMemberDays: num_(s.getRange('B6').getValue()),
     dailyRate: num_(s.getRange('B7').getValue()),
     fuelPrice: num_(s.getRange('B9').getValue()),
@@ -815,6 +819,61 @@ function sweepDueRides_(ss) {
   }
 
   return { logged: logged };
+}
+
+/**
+ * Rewrites a logged trip. Anyone can: people mistype who was in the car, and
+ * the fix should be as easy as the mistake.
+ *
+ * Only the input columns are touched — distance, fuel and the split are
+ * formulas and recalculate themselves.
+ */
+function editTrip_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.trips);
+  var row = findTripRow_(sheet, p.tripId);
+  if (!row) throw new Error('Trip not found: ' + p.tripId);
+
+  var riders = p.riders || [];
+  var isTaxi = !!p.taxi && riders.length > 0;
+
+  if (p.date) sheet.getRange(row, TRIP.date).setValue(new Date(p.date));
+  if (p.driver) sheet.getRange(row, TRIP.driver).setValue(p.driver);
+  sheet.getRange(row, TRIP.destination).setValue(p.destination || '');
+  sheet.getRange(row, TRIP.manualKm).setValue(p.manualKm == null ? '' : p.manualKm);
+  sheet.getRange(row, TRIP.tolls).setValue(p.tolls || 0);
+  sheet.getRange(row, TRIP.parking).setValue(p.parking || 0);
+  sheet.getRange(row, TRIP.people).setValue(isTaxi ? riders.length : 1 + riders.length);
+  sheet.getRange(row, TRIP.notes).setValue(p.notes || '');
+  sheet.getRange(row, TRIP.riders).setValue(riders.join(', '));
+  sheet.getRange(row, TRIP.tripType).setValue(p.tripType || 'Round trip');
+  sheet.getRange(row, TRIP.odoStart).setValue(p.odoStart == null ? '' : p.odoStart);
+  sheet.getRange(row, TRIP.odoEnd).setValue(p.odoEnd == null ? '' : p.odoEnd);
+  sheet.getRange(row, TRIP.activity).setValue(p.activity || '');
+  sheet.getRange(row, TRIP.taxi).setValue(isTaxi ? 'Yes' : 'No');
+  sheet.getRange(row, TRIP.origin).setValue(p.origin || '');
+  sheet.getRange(row, TRIP.boards).setValue(p.boards ? 'Yes' : 'No');
+
+  SpreadsheetApp.flush();
+  rebuildRideDays_(ss);
+
+  return {
+    tripId: p.tripId,
+    row: row,
+    distanceKm: num_(sheet.getRange(row, TRIP.distance).getValue()),
+    total: num_(sheet.getRange(row, TRIP.total).getValue()),
+    perPerson: num_(sheet.getRange(row, TRIP.perPerson).getValue()),
+  };
+}
+
+function findTripRow_(sheet, tripId) {
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW || !tripId) return 0;
+  var ids = sheet.getRange(FIRST_DATA_ROW, TRIP.id, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(tripId)) return FIRST_DATA_ROW + i;
+  }
+  return 0;
 }
 
 /** Removes a logged trip. Admin-only in the UI; the row goes, the charge goes. */

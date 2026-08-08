@@ -14,6 +14,7 @@ import type {
   CancelRidePayload,
   LogRidePayload,
   DeleteTripPayload,
+  EditTripPayload,
 } from './types';
 
 /**
@@ -287,6 +288,45 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
           };
         }
       }
+    }
+
+    if (op.op === 'editTrip') {
+      const e = op.payload as EditTripPayload;
+      bootstrap = {
+        ...bootstrap,
+        recentTrips: bootstrap.recentTrips.map((t) => {
+          if (t.id !== e.tripId) return t;
+          const spotHit = bootstrap.spots.find((sp) => sp.name === e.destination);
+          const place = bootstrap.places.find((pl) => pl.name === e.destination);
+          const oneWayKm = spotHit?.oneWayKm ?? place?.oneWayKm ?? 0;
+          const distanceKm = oneWayKm
+            ? oneWayKm * (e.tripType === 'One-way' && !e.taxi ? 1 : 2)
+            : (e.manualKm ?? t.distanceKm);
+          const isTaxi = e.taxi && e.riders.length > 0;
+          const people = isTaxi ? e.riders.length : 1 + e.riders.length;
+          const fuel =
+            distanceKm * bootstrap.settings.costPerKm * loadFactor(1 + e.riders.length, e.boards);
+          const total = fuel + e.tolls + e.parking;
+          return {
+            ...t,
+            date: e.date,
+            destination: e.destination,
+            activity: e.activity,
+            distanceKm,
+            fuelCost: fuel,
+            tolls: e.tolls,
+            parking: e.parking,
+            total,
+            people,
+            perPerson: total / people,
+            riders: e.riders,
+            tripType: e.tripType,
+            taxi: !!isTaxi,
+            origin: e.origin,
+            boards: e.boards,
+          };
+        }),
+      };
     }
 
     if (op.op === 'deleteTrip') {

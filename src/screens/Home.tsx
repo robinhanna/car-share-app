@@ -49,7 +49,7 @@ export function Home({ me, onNavigate }: Props) {
       onCancel: () => void queueOp('cancelReservation', { id: r.id }),
     })),
     ...rides
-      .filter((r) => r.status === 'claimed')
+      .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() > now)
       .map((r) => ({
         id: r.id,
         driver: r.driver,
@@ -62,6 +62,22 @@ export function Home({ me, onNavigate }: Props) {
         onCancel: () => void queueOp('cancelRide', { id: r.id }),
       })),
   ].sort((a, b) => a.when.localeCompare(b.when));
+
+  // A lift whose pickup time has passed isn't "coming up" any more — it's
+  // waiting to be logged. The backend logs these itself two hours on, but
+  // whoever drove shouldn't have to wait for that if they're looking now.
+  const overdue: Booking[] = rides
+    .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() <= now)
+    .map((r) => ({
+      id: r.id,
+      driver: r.driver,
+      passenger: r.passenger,
+      what: [r.passenger, r.to].filter(Boolean).join(' → '),
+      when: timeLabel(r.when),
+      lift: true,
+      onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
+      onCancel: () => void queueOp('cancelRide', { id: r.id }),
+    }));
 
   const recent = [...(bootstrap?.recentTrips ?? [])]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -186,6 +202,41 @@ export function Home({ me, onNavigate }: Props) {
         </>
       )}
 
+      {overdue.length > 0 && (
+        <>
+          <div class="spacer" />
+          <p class="section-title">
+            Still to log <span class="total">{overdue.length}</span>
+          </p>
+          <ul class="list">
+            {overdue.map((b) => (
+              <li key={b.id}>
+                <span>
+                  <strong>{b.driver}</strong> · {b.what}
+                  <span class="tag">lift</span>
+                  <br />
+                  <span class="muted">{b.when}</span>
+                </span>
+                <span class="row-actions">
+                  <button class="btn btn--inline" onClick={() => b.onLog(onNavigate)}>
+                    Log it
+                  </button>
+                  <button
+                    class="icon-btn icon-btn--danger"
+                    aria-label="Cancel"
+                    onClick={() => {
+                      if (confirm('This lift never happened?')) b.onCancel();
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       {recent.length > 0 && (
         <>
           <div class="spacer" />
@@ -201,21 +252,34 @@ export function Home({ me, onNavigate }: Props) {
                     {shortDate(t.date)} · {t.driver} · {km(t.distanceKm)} · {euro(t.total)}
                   </span>
                 </span>
-                {/* Auto-logged trips need an undo, but only Robin gets it —
-                    otherwise a mistaken tap quietly rewrites someone's bill. */}
-                {me === ADMIN_MEMBER && t.id && (
-                  <button
-                    class="icon-btn icon-btn--danger"
-                    aria-label="Remove"
-                    onClick={() => {
-                      if (confirm(`Remove the ${t.destination || 'trip'} on ${shortDate(t.date)}?`)) {
-                        void queueOp('deleteTrip', { tripId: t.id });
-                      }
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
+                <span class="row-actions">
+                  {/* Anyone can correct a trip — people mistype who was in the
+                      car, and the fix should be as easy as the mistake. */}
+                  {t.id && (
+                    <button
+                      class="icon-btn"
+                      aria-label="Edit"
+                      onClick={() => onNavigate({ name: 'log', trip: t })}
+                    >
+                      ✎
+                    </button>
+                  )}
+                  {/* Removing is Robin's alone: a mistaken tap here quietly
+                      rewrites someone's bill. */}
+                  {me === ADMIN_MEMBER && t.id && (
+                    <button
+                      class="icon-btn icon-btn--danger"
+                      aria-label="Remove"
+                      onClick={() => {
+                        if (confirm(`Remove the ${t.destination || 'trip'} on ${shortDate(t.date)}?`)) {
+                          void queueOp('deleteTrip', { tripId: t.id });
+                        }
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
               </li>
             ))}
           </ul>

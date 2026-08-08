@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { RideRequest } from './api/types';
+import type { RideRequest, Trip } from './api/types';
 import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
 import { sync, useApp } from './state/store';
@@ -16,7 +16,7 @@ import { TripSummary } from './screens/TripSummary';
 export type Route =
   | { name: 'home' }
   | { name: 'reserve' }
-  | { name: 'log'; reservationId?: string; ride?: RideRequest }
+  | { name: 'log'; reservationId?: string; ride?: RideRequest; trip?: Trip }
   | { name: 'rides' }
   | { name: 'summary'; cost: TripCost; destination: string }
   | { name: 'karma' }
@@ -96,6 +96,7 @@ export function App() {
           me={me}
           reservationId={route.reservationId}
           ride={route.ride}
+          trip={route.trip}
           onDone={(cost, destination) => setRoute({ name: 'summary', cost, destination })}
         />
       )}

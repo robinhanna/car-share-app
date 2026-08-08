@@ -160,6 +160,7 @@ export type OpName =
   | 'claimRide'
   | 'cancelRide'
   | 'logRide'
+  | 'editTrip'
   | 'deleteTrip'
   | 'resetTestData';
 
@@ -186,6 +187,10 @@ export interface CompleteTripPayload {
 export interface LogRidePayload {
   id: string;
   date: string;
+}
+
+export interface EditTripPayload extends Omit<CompleteTripPayload, 'reservationId' | 'rideRequestId'> {
+  tripId: string;
 }
 
 export interface DeleteTripPayload {
@@ -266,6 +271,7 @@ export type OpPayload =
   | ClaimRidePayload
   | CancelRidePayload
   | LogRidePayload
+  | EditTripPayload
   | DeleteTripPayload
   | ResetPayload;
 
