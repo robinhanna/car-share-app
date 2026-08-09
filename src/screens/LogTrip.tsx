@@ -26,23 +26,35 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const places = bootstrap?.places ?? [];
   const settings = bootstrap?.settings;
 
-  const [mode, setMode] = useState<Mode>(trip && !trip.destination ? 'manual' : 'spot');
+  // A booking already recorded where it was going, and a lift knows where it
+  // dropped someone. Making the driver re-pick it defeats the point of logging
+  // from the booking at all — the form should be a check, not a re-entry.
+  const opening: DestinationValue = trip
+    ? { place: trip.destination, activity: trip.activity }
+    : reservation
+      ? splitDestination(reservation.destination)
+      : { place: ride?.to ?? '', activity: '' };
+
+  // Can the sheet put a distance on it? A booking may name somewhere typed by
+  // hand ("Favo") or nowhere at all — destination is optional when booking —
+  // and the Spot tab can only price names it knows. Opening there anyway gave
+  // a form whose Save button could never light up and never said why.
+  const unpriceable = !!opening.place && !findSpot(opening.place, spots, places);
+
+  // Order matters. A manual trip being corrected keeps its own distance; a
+  // booking naming somewhere unknown drops to Just km; everything else — including
+  // a blank form opened from "Log a trip" — starts on Spot, where you pick.
+  const [mode, setMode] = useState<Mode>(
+    (trip && !trip.destination) || unpriceable ? 'manual' : 'spot',
+  );
   const [from, setFrom] = useState(defaultFrom(trip, ride, reservation));
   const [until, setUntil] = useState(defaultUntil(trip, ride, reservation));
   const [origin, setOrigin] = useState(trip?.origin || 'Quinta');
   const [boards, setBoards] = useState(!!trip?.boards);
-  // Names an odometer or manual trip so it isn't a blank row in the log.
-  const [label, setLabel] = useState(trip && !trip.destination ? '' : '');
-  // A booking already recorded where it was going, and a lift knows where it
-  // dropped someone. Making the driver re-pick it defeats the point of logging
-  // from the booking at all — the form should be a check, not a re-entry.
-  const [destinationValue, setDestinationValue] = useState<DestinationValue>(
-    trip
-      ? { place: trip.destination, activity: trip.activity }
-      : reservation
-        ? splitDestination(reservation.destination)
-        : { place: ride?.to ?? '', activity: '' },
-  );
+  // Names an odometer or manual trip so it isn't a blank row in the log. Keeps
+  // whatever the booking called the place, so the name survives the fallback.
+  const [label, setLabel] = useState(unpriceable ? opening.place : '');
+  const [destinationValue, setDestinationValue] = useState<DestinationValue>(opening);
   const [tripType, setTripType] = useState<TripType>(trip?.tripType ?? 'Round trip');
   const [manualKm, setManualKm] = useState(
     trip && !trip.destination ? String(trip.distanceKm) : '',
@@ -69,10 +81,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   const [notes, setNotes] = useState(trip?.notes ?? reservation?.notes ?? ride?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
-  // The distance can come from either table — a surf spot or a town in Places.
-  const spot =
-    spots.find((s) => s.name === destinationValue.place) ??
-    toSpot(places.find((p) => p.name === destinationValue.place && p.category === 'Town'));
+  const spot = findSpot(destinationValue.place, spots, places);
 
   const distanceKm = useMemo(
     () =>
@@ -364,6 +373,17 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       <button class="btn" disabled={!canSave} onClick={() => void save()}>
         {saving ? 'Saving…' : trip ? 'Save changes' : 'Save trip'}
       </button>
+      {/* A greyed-out button that says nothing is just a broken app. Reserve
+          already explains its own disabled state this way. */}
+      {distanceKm <= 0 && !saving && (
+        <p class="muted center">
+          {mode === 'spot'
+            ? 'Pick a surf spot or a town so the distance is known — or use Just km to type it.'
+            : mode === 'odometer'
+              ? 'Enter both odometer readings to work out the distance.'
+              : 'How many kilometres was it?'}
+        </p>
+      )}
     </>
   );
 }
@@ -388,6 +408,19 @@ function defaultUntil(trip?: Trip, _ride?: RideRequest, reservation?: Reservatio
   if (trip) return localDateTimeInput(new Date(trip.date));
   if (reservation) return localDateTimeInput(new Date(reservation.end));
   return localDateTimeInput(new Date());
+}
+
+/**
+ * The distance can come from either table — a surf spot, or a Town in Places.
+ * Anything else (an activity, a name typed by hand, nothing at all) has no
+ * distance, which is what the Just km and Odometer tabs are for.
+ */
+function findSpot(place: string, spots: Spot[], places: Place[]): Spot | null {
+  if (!place) return null;
+  return (
+    spots.find((s) => s.name === place) ??
+    toSpot(places.find((p) => p.name === place && p.category === 'Town'))
+  );
 }
 
 /** Towns carry a one-way distance too, so they can drive the same maths. */
