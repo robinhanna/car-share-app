@@ -17,6 +17,7 @@ import type {
   ClaimRidePayload,
   CancelRidePayload,
   LogRidePayload,
+  DeleteKarmaPayload,
   DeleteTripPayload,
   EditTripPayload,
   JoinPayload,
@@ -35,18 +36,18 @@ let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
   codeVersion: EXPECTED_CODE_VERSION,
   settings: {
-    totalCost: 405,
+    totalCost: 410,
     rentalCost: 375,
-    extras: 30,
+    extras: 35,
     monthStart: '2026-08-07T00:00:00.000Z',
     monthEnd: '2026-08-31T00:00:00.000Z',
     totalMemberDays: 75,
-    dailyRate: 405 / 75,
+    dailyRate: 410 / 75,
     fuelPrice,
     consumption,
     costPerKm: (fuelPrice * consumption) / 100,
     riderDays: 1.5,
-    dayRate: 405 / 76.5,
+    dayRate: 410 / 76.5,
   },
   members: [
     member('Robin', true, 25, 3),
@@ -89,16 +90,18 @@ let bootstrap: Bootstrap = {
   karmaActions: [
     { action: 'Cleaned the car', points: 1 },
     { action: 'Refuelled', points: 2 },
-    { action: 'Drove others around', points: 1 },
+    { action: 'Gave people a lift', points: 1 },
     { action: 'Sorted the boards / gear', points: 1 },
   ],
-  karmaLog: [{ date: '2026-08-03', name: 'Julia', action: 'Cleaned the car', points: 1 }],
+  karmaLog: [
+    { id: 'seed-karma', date: '2026-08-03', name: 'Julia', action: 'Cleaned the car', points: 1 },
+  ],
   payments: [
     {
       date: '2026-08-07',
       name: 'Robin',
       type: 'prepayment',
-      amount: 405,
+      amount: 410,
       note: 'Rental and pickup paid upfront',
     },
   ],
@@ -143,7 +146,7 @@ function member(
   role: Role = 'Driver',
   rideDays = 0,
 ): Member {
-  const rate = 405 / 76.5;
+  const rate = 410 / 76.5;
   const carCharge = (included ? daysActive : rideDays) * rate;
   return {
     name,
@@ -213,6 +216,23 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
       bootstrap = {
         ...bootstrap,
         reservations: bootstrap.reservations.filter((r) => r.id !== id),
+      };
+    }
+
+    // Mirrors deleteKarma_: the point goes and so does any fuel money it
+    // credited, or the mock would quietly keep cash the Sheet gives back.
+    if (op.op === 'deleteKarma') {
+      const { id } = op.payload as DeleteKarmaPayload;
+      const gone = bootstrap.karmaLog.find((k) => k.id === id);
+      bootstrap = {
+        ...bootstrap,
+        karmaLog: bootstrap.karmaLog.filter((k) => k.id !== id),
+        payments: gone
+          ? bootstrap.payments.filter(
+              (p) =>
+                !(p.type === 'fuel' && p.name === gone.name && p.note === gone.action),
+            )
+          : bootstrap.payments,
       };
     }
 
@@ -428,7 +448,13 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
           ...bootstrap,
           karmaLog: [
             ...bootstrap.karmaLog,
-            { date: new Date().toISOString(), name: driver, action: action.action, points: action.points },
+            {
+              id: op.clientId + ':karma',
+              date: new Date().toISOString(),
+              name: driver,
+              action: action.action,
+              points: action.points,
+            },
           ],
         };
       }
@@ -465,17 +491,25 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
 
     // The real backend credits pump spending from logKarma; mirror it so the
     // dev ledger tells the truth.
+    // logKarma_ writes the Karma Log row *and*, for a refuel, a paired payment.
+    // The mock only ever did the second half, so a point logged in dev never
+    // appeared in the log — which hid the fact that it couldn't be removed.
     if (op.op === 'logKarma') {
       const k = op.payload as LogKarmaPayload;
-      if (k.amount && k.amount > 0) {
-        bootstrap = {
-          ...bootstrap,
-          payments: [
-            ...bootstrap.payments,
-            { date: k.date, name: k.name, type: 'fuel', amount: k.amount, note: k.action },
-          ],
-        };
-      }
+      bootstrap = {
+        ...bootstrap,
+        karmaLog: [
+          ...bootstrap.karmaLog,
+          { id: op.clientId, date: k.date, name: k.name, action: k.action, points: k.points },
+        ],
+        payments:
+          k.amount && k.amount > 0
+            ? [
+                ...bootstrap.payments,
+                { date: k.date, name: k.name, type: 'fuel', amount: k.amount, note: k.action },
+              ]
+            : bootstrap.payments,
+      };
     }
   });
   return {
@@ -483,10 +517,6 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
     results: ops.map((op) => ({
       clientId: op.clientId,
       ok: true,
-      data:
-        op.op === 'resetTestData'
-          ? { cleared: { trips: 0, karma: 0, reservations: 0 }, backup: 'mock backup' }
-          : undefined,
     })),
     data: structuredClone(bootstrap),
   };

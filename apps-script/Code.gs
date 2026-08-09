@@ -17,7 +17,7 @@
  * bootstrap returns this number so the app can say so out loud, and
  * verifyInstall() compares it against what setup.gs expects.
  */
-var CODE_VERSION = 13;
+var CODE_VERSION = 14;
 
 var SHEETS = {
   settings: 'Settings',
@@ -83,6 +83,13 @@ var MEMBER_FURNITURE = /^(total|check\b)/i;
 /** Who fronted the rental. Used to seed the prepayment row. */
 var ADMIN_NAME = 'Robin';
 
+/**
+ * The karma action awarded for driving someone. Named in one place because
+ * setup.gs seeds it, migrateConfig_ renames it, and liftKarmaAction_ falls back
+ * to it — three copies of a string is three chances to drift.
+ */
+var LIFT_ACTION = 'Gave people a lift';
+
 // ---------------------------------------------------------------- endpoints
 
 function doGet(e) {
@@ -139,6 +146,7 @@ function applyOp_(op) {
     case 'editReservation': return editReservation_(op.payload || {});
     case 'cancelReservation': return cancelReservation_(op.payload || {});
     case 'logKarma': return logKarma_(op.clientId, op.payload || {});
+    case 'deleteKarma': return deleteKarma_(op.payload || {});
     case 'logPayment': return logPayment_(op.clientId, op.payload || {});
     case 'settleUp': return settleUp_(op.clientId, op.payload || {});
     case 'requestRide': return requestRide_(op.clientId, op.payload || {});
@@ -325,10 +333,13 @@ function readKarmaLog_(ss) {
   var s = ss.getSheetByName(SHEETS.karma);
   var last = s.getLastRow();
   if (last < FIRST_DATA_ROW) return [];
-  return s.getRange(FIRST_DATA_ROW, 1, last - 2, 4).getValues()
+  return s.getRange(FIRST_DATA_ROW, 1, last - 2, KARMA.clientId).getValues()
     .filter(function (r) { return String(r[KARMA.name - 1]).trim() !== ''; })
     .map(function (r) {
       return {
+        // Without this the app can name a karma row but not point at one, which
+        // is why a mis-tapped point used to be impossible to take back.
+        id: String(r[KARMA.clientId - 1] || ''),
         date: iso_(r[KARMA.date - 1]),
         name: String(r[KARMA.name - 1]).trim(),
         action: String(r[KARMA.action - 1] || ''),
@@ -732,6 +743,52 @@ function logKarma_(clientId, p) {
 }
 
 /**
+ * Takes a karma entry back.
+ *
+ * A point is easy to award by accident and there was no way to undo one. The
+ * awkward part is money: a refuelling entry also wrote a Payments row under
+ * `clientId + ':spend'`, so removing the karma alone would leave the group
+ * crediting cash for something that no longer happened. Both go, or neither.
+ *
+ * Returns how much was refunded so the app can say so before it happens.
+ */
+function deleteKarma_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.karma);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) throw new Error('Karma entry not found: ' + p.id);
+
+  var ids = sheet.getRange(FIRST_DATA_ROW, KARMA.clientId, last - 2, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) !== String(p.id)) continue;
+    var row = FIRST_DATA_ROW + i;
+    var name = String(sheet.getRange(row, KARMA.name).getValue()).trim();
+    sheet.getRange(row, 1, 1, KARMA.clientId).clearContent();
+
+    var removed = removePayment_(ss, p.id + ':spend');
+    if (removed > 0) rebuildRideDays_(ss);
+    return { id: p.id, name: name, refunded: removed };
+  }
+  throw new Error('Karma entry not found: ' + p.id);
+}
+
+/** Clears a Payments row by client ID. Returns the amount removed, or 0. */
+function removePayment_(ss, clientId) {
+  var sheet = ss.getSheetByName(SHEETS.payments);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return 0;
+
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, last - 2, PAY.clientId).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][PAY.clientId - 1]) !== String(clientId)) continue;
+    var amount = num_(rows[i][PAY.amount - 1]);
+    sheet.getRange(FIRST_DATA_ROW + i, 1, 1, PAY.clientId).clearContent();
+    return amount;
+  }
+  return 0;
+}
+
+/**
  * A payment reduces what someone owes: cash handed over, fuel bought at the
  * pump, tolls or parking fronted on a trip.
  */
@@ -877,7 +934,7 @@ function liftKarmaAction_(ss) {
   for (var i = 0; i < actions.length; i++) {
     if (/dr(o|i)ve|lift|taxi/i.test(actions[i].action)) return actions[i];
   }
-  return { action: 'Drove others around', points: 1 };
+  return { action: LIFT_ACTION, points: 1 };
 }
 
 /** Undoes the karma when a claimed lift is called off. */

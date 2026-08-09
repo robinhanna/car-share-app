@@ -52,6 +52,8 @@ export interface Payment {
 }
 
 export interface KarmaEntry {
+  /** Client ID of the row. Empty on entries written before v14. */
+  id: string;
   date: string;
   name: string;
   action: string;
@@ -163,6 +165,7 @@ export type OpName =
   | 'editReservation'
   | 'cancelReservation'
   | 'logKarma'
+  | 'deleteKarma'
   | 'logPayment'
   | 'settleUp'
   | 'requestRide'
@@ -172,8 +175,7 @@ export type OpName =
   | 'joinRide'
   | 'logRide'
   | 'editTrip'
-  | 'deleteTrip'
-  | 'resetTestData';
+  | 'deleteTrip';
 
 export interface CompleteTripPayload {
   date: string;
@@ -267,6 +269,10 @@ export interface LogKarmaPayload {
   amount?: number;
 }
 
+export interface DeleteKarmaPayload {
+  id: string;
+}
+
 export interface SettleUpPayload {
   date: string;
   from: string;
@@ -283,17 +289,13 @@ export interface LogPaymentPayload {
   note: string;
 }
 
-/** Testing only. The literal guards against a stray call doing damage. */
-export interface ResetPayload {
-  confirm: 'RESET';
-}
-
 export type OpPayload =
   | CompleteTripPayload
   | CreateReservationPayload
   | EditReservationPayload
   | CancelReservationPayload
   | LogKarmaPayload
+  | DeleteKarmaPayload
   | LogPaymentPayload
   | SettleUpPayload
   | RequestRidePayload
@@ -302,8 +304,7 @@ export type OpPayload =
   | JoinPayload
   | LogRidePayload
   | EditTripPayload
-  | DeleteTripPayload
-  | ResetPayload;
+  | DeleteTripPayload;
 
 export interface Op {
   clientId: string;

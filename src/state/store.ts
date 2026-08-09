@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
-import { fetchBootstrap, isConfigured, newClientId, postOps } from '../api/client';
+import { fetchBootstrap, isConfigured, newClientId } from '../api/client';
 import type { Bootstrap, Op, OpName, OpPayload } from '../api/types';
 import {
   cacheBootstrap,
-  clearLocal,
   enqueue,
   readCachedBootstrap,
   readOutbox,
@@ -117,26 +116,3 @@ export function getState(): AppState {
   return state;
 }
 
-/**
- * Testing only: clears the Sheet's three log tabs and this device's local state.
- *
- * Deliberately not routed through the outbox — a destructive action queued up to
- * fire whenever a phone next finds signal is exactly the wrong behaviour. It
- * runs now, online, or not at all. The backend takes a backup before clearing.
- */
-export async function resetAllData(): Promise<{ cleared: unknown; backup: string }> {
-  if (!navigator.onLine) throw new Error('Reset needs a connection.');
-
-  const response = await postOps([
-    { clientId: newClientId(), op: 'resetTestData', payload: { confirm: 'RESET' } },
-  ]);
-
-  const result = response.results?.[0];
-  if (!result?.ok) throw new Error(result?.error ?? 'Reset was rejected.');
-
-  await clearLocal();
-  setState({ bootstrap: null, pending: [], ready: false, loading: true });
-  await sync();
-
-  return result.data as { cleared: unknown; backup: string };
-}

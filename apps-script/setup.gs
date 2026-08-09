@@ -78,7 +78,7 @@ function setupKarmaActions_(ss) {
     sheet.getRange(FIRST_DATA_ROW, 1, 4, 3).setValues([
       ['Cleaned the car', 1, 'Yes'],
       ['Refuelled', 2, 'Yes'],
-      ['Drove others around', 1, 'Yes'],
+      [LIFT_ACTION, 1, 'Yes'],
       ['Sorted the boards / gear', 1, 'Yes'],
     ]);
   }
@@ -288,7 +288,36 @@ function setupSettings_(ss) {
 /** Where the car actually is. Must match the timeZone in appsscript.json. */
 var TIME_ZONE = 'Europe/Lisbon';
 
-var CONFIG_VERSION = 6;
+var CONFIG_VERSION = 7;
+
+/**
+ * Renames a karma action wherever it appears — the Karma Actions tab and every
+ * row already written to the Karma Log.
+ *
+ * Both, or the log keeps showing a label that no longer exists anywhere else.
+ * Skips silently if Robin has already renamed it himself.
+ */
+function renameKarmaAction_(ss, from, to) {
+  var renamed = 0;
+  [[SHEETS.karmaActions, 1], [SHEETS.karma, KARMA.action]].forEach(function (pair) {
+    var sheet = ss.getSheetByName(pair[0]);
+    if (!sheet) return;
+    var last = sheet.getLastRow();
+    if (last < FIRST_DATA_ROW) return;
+    var range = sheet.getRange(FIRST_DATA_ROW, pair[1], last - 2, 1);
+    var values = range.getValues();
+    var touched = false;
+    for (var i = 0; i < values.length; i++) {
+      if (String(values[i][0]).trim() === from) {
+        values[i][0] = to;
+        touched = true;
+        renamed++;
+      }
+    }
+    if (touched) range.setValues(values);
+  });
+  if (renamed) Logger.log('Renamed "' + from + '" to "' + to + '" in ' + renamed + ' place(s).');
+}
 
 function migrateConfig_(ss) {
   var props = PropertiesService.getScriptProperties();
@@ -316,7 +345,9 @@ function migrateConfig_(ss) {
   s.getRange('B3').setValue(375);                            // 25 days at €15
   s.getRange('B4').setValue(new Date(2026, 7, 7, 12));       // 7 August
   s.getRange('B5').setValue(new Date(2026, 7, 31, 12));      // 31 August
-  s.getRange('B14').setValue(30);                       // Uber to collect the car
+  // €30 Uber to collect the car, plus the €5 the ATM charged Robin taking the
+  // cash out. Both are money he laid out for the group, so both are in the pot.
+  s.getRange('B14').setValue(35);
 
   // 7.5 L/100km was a guess from before anyone had driven the car. Robin's tank
   // reading — 224 km on just over a quarter — works out around 5.6 on a mostly
@@ -338,6 +369,8 @@ function migrateConfig_(ss) {
       Logger.log('John is now a rider.');
     }
   }
+
+  renameKarmaAction_(ss, 'Drove others around', LIFT_ACTION);
 
   // The prepayment row was seeded by this script from an older total, so it
   // tracks the total. A row Robin typed himself is a different matter and is
@@ -877,7 +910,7 @@ function showToken() {
  * versions ago — which is the failure that keeps happening, because pasting and
  * deploying are separate steps. This constant catches that.
  */
-var EXPECTED_CODE_VERSION = 13;
+var EXPECTED_CODE_VERSION = 14;
 
 function verifyInstall() {
   var required = [
@@ -897,6 +930,7 @@ function verifyInstall() {
     'knownDistance_', 'awardLiftKarma_', 'removeLiftKarma_', 'liftKarmaAction_',
     'joinReservation_', 'joinRide_', 'toggleName_', 'tripMatchesReservation_',
     'editReservation_', 'findReservationRow_', 'payingRiders_', 'isFreeRider_',
+    'deleteKarma_', 'removePayment_', 'renameKarmaAction_',
     // setup.gs
     'setupSheet', 'setupReservations_', 'setupRideRequests_', 'setupKarmaActions_',
     'setupKarmaLog_', 'setupPlaces_', 'setupPayments_', 'setupRideDays_', 'setupSettings_',

@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
-import type { KarmaAction } from '../api/types';
+import type { KarmaAction, KarmaEntry } from '../api/types';
+import { ADMIN_MEMBER } from '../config';
 import { euro } from '../lib/cost';
+import { shortDate } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
 
 /**
@@ -34,6 +36,35 @@ export function Karma({ me }: Props) {
     });
     setJustLogged(spent ? `${action} · ${euro(spent)} credited` : action);
     setTimeout(() => setJustLogged(null), 3000);
+  };
+
+  const entries = [...(bootstrap?.karmaLog ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+
+  /**
+   * Removing a refuel takes its euros back out too, so the confirm has to say
+   * so — Robin's call. The amount isn't on the karma row, so it's matched
+   * against the payment `logKarma_` wrote alongside it; when that can't be
+   * found the warning stays general rather than inventing a figure.
+   */
+  const remove = (k: KarmaEntry) => {
+    const paired = costsMoney(k.action)
+      ? (bootstrap?.payments ?? []).find(
+          (p) =>
+            p.type === 'fuel' &&
+            p.name === k.name &&
+            p.note === k.action &&
+            p.date.slice(0, 10) === k.date.slice(0, 10),
+        )
+      : undefined;
+
+    const money = paired
+      ? ` ${euro(paired.amount)} of fuel money comes off ${k.name}'s balance with it.`
+      : costsMoney(k.action)
+        ? ' Any fuel money credited with it comes off too.'
+        : '';
+
+    if (!confirm(`Remove ${k.name}'s "${k.action}" (+${k.points})?${money}`)) return;
+    void queueOp('deleteKarma', { id: k.id });
   };
 
   const tap = (a: KarmaAction) => {
@@ -120,6 +151,38 @@ export function Karma({ me }: Props) {
             </li>
           ))}
       </ul>
+
+      {/* The leaderboard alone gives you a number and no way to reach the thing
+          behind it, so a mis-tapped point was permanent. */}
+      {entries.length > 0 && (
+        <>
+          <div class="spacer" />
+          <p class="section-title">Recently</p>
+          <ul class="list">
+            {entries.map((k) => (
+              <li key={k.id || `${k.date}-${k.name}-${k.action}`}>
+                <span>
+                  <strong>{k.name}</strong> · {k.action}
+                  <br />
+                  <span class="muted">{shortDate(k.date)}</span>
+                </span>
+                <span class="row-actions">
+                  <span class="amount">+{k.points}</span>
+                  {me === ADMIN_MEMBER && k.id && (
+                    <button
+                      class="icon-btn icon-btn--danger"
+                      aria-label="Remove"
+                      onClick={() => remove(k)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </>
   );
 }

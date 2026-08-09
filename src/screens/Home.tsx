@@ -4,6 +4,7 @@ import type { Reservation } from '../api/types';
 import { ADMIN_MEMBER } from '../config';
 import { dayRate, euro, km, personLedger } from '../lib/cost';
 import { shortDate, timeLabel } from '../lib/dates';
+import { RateCurve } from './RateCurve';
 import { getSeen, hasChanged, markSeen } from '../state/seen';
 import { queueOp, sync, useApp } from '../state/store';
 
@@ -234,7 +235,8 @@ export function Home({ me, onNavigate }: Props) {
             </span>
             <span class="chev"> ›</span>
           </button>
-        ) : (
+        ) : null}
+        {!active && (
           <>
             <p class="status-line">Free right now</p>
             <p class="muted">
@@ -244,6 +246,10 @@ export function Home({ me, onNavigate }: Props) {
             </p>
           </>
         )}
+
+        {/* Outside the tappable block above — swallowing it into that button
+            would open the booking every time someone glanced at the chart. */}
+        {settings && members.length > 0 && <RateCurve members={members} settings={settings} />}
       </div>
 
       <div class="btn-stack">
