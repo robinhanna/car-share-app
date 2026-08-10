@@ -60,7 +60,9 @@ export function RateCurve({ members, settings }: Props) {
 
   return (
     <div class="rate-curve">
-      <p class="eyebrow">Today's ride-along rate</p>
+      {/* "day rate" spelled out: the figure is per day in the car, and a bare
+          "rate" left people reading it as a total. */}
+      <p class="eyebrow">Current ride-along day rate</p>
       <p class="rate-now">
         {euro(now)}
         {drop > 0.005 && (
