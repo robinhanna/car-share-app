@@ -50,22 +50,31 @@ export function RateCurve({ members, settings }: Props) {
 
   const here = Math.min(riderDays, span);
   const now = rateAt(riderDays);
-  const drivers = members.filter((m) => m.included).length || 1;
-  // What one more day in the car takes off each driver's total for the month.
-  const saving = (memberDays * (now - rateAt(riderDays + 1))) / drivers;
+
+  // Measured against the rate before anyone had ridden at all, so the number
+  // answers "what has riding along already saved me" rather than "what is one
+  // more day worth" — the passenger's question, not the driver's.
+  const start = rateAt(0);
+  const drop = start - now;
+  const dropPct = start > 0 ? (drop / start) * 100 : 0;
 
   return (
     <div class="rate-curve">
+      <p class="eyebrow">Today's ride-along rate</p>
+      <p class="rate-now">
+        {euro(now)}
+        {drop > 0.005 && (
+          <span class="rate-drop">
+            ↓ {euro(drop)} ({Math.round(dropPct)}%)
+          </span>
+        )}
+      </p>
       {/* Stretched to fill the card, so the marker is a vertical rule rather
           than a dot — a circle would render as a squashed ellipse. */}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         <polyline points={points.join(' ')} />
         <line class="marker" x1={x(here)} y1={y(now)} x2={x(here)} y2={H} />
       </svg>
-      <p class="muted">
-        <strong>{euro(now)}/day</strong> each right now. Every extra day someone rides along
-        takes about {euro(saving)} off each driver.
-      </p>
     </div>
   );
 }
