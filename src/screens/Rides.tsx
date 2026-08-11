@@ -1,7 +1,8 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { newClientId } from '../api/client';
 import type { RideRequest } from '../api/types';
 import { localDateTimeInput, timeLabel } from '../lib/dates';
+import { getSeen, hasChanged, markSeen } from '../state/seen';
 import { queueOp, useApp } from '../state/store';
 
 interface Props {
@@ -28,6 +29,25 @@ export function Rides({ me, onDrive }: Props) {
   );
 
   const [asking, setAsking] = useState(false);
+  const [editingRide, setEditingRide] = useState<RideRequest | null>(null);
+  const [seen, setSeen] = useState(getSeen);
+
+  /**
+   * A ride has no "updated" column, and doesn't need one: what the requester
+   * cares about is who has it. `claimed:Robin` versus `open:` is the whole
+   * signal, and it changes exactly when someone takes the lift or hands it back.
+   */
+  const signal = (r: RideRequest) => `${r.status}:${r.driver}`;
+
+  // Seed silently, so a request doesn't announce itself as changed the first
+  // time its owner lays eyes on it.
+  useEffect(() => {
+    let next = seen;
+    mine.forEach((r) => {
+      if (next[r.id] === undefined) next = markSeen(r.id, signal(r));
+    });
+    if (next !== seen) setSeen(next);
+  }, [requests, seen]);
 
   return (
     <>
@@ -38,8 +58,15 @@ export function Rides({ me, onDrive }: Props) {
         lift — you do.
       </p>
 
-      {asking ? (
-        <AskForm me={me} onClose={() => setAsking(false)} />
+      {asking || editingRide ? (
+        <AskForm
+          me={me}
+          request={editingRide ?? undefined}
+          onClose={() => {
+            setAsking(false);
+            setEditingRide(null);
+          }}
+        />
       ) : (
         <>
           <div class="spacer" />
@@ -62,16 +89,34 @@ export function Rides({ me, onDrive }: Props) {
                   <span class="muted">
                     {timeLabel(r.when)} · <StatusLine request={r} />
                   </span>
+                  {hasChanged(seen, r.id, signal(r)) && (
+                    <span class="tag tag--alert">
+                      {r.status === 'claimed' ? 'accepted' : 'open again'}
+                    </span>
+                  )}
                 </span>
-                {r.status === 'open' && (
-                  <button
-                    class="back"
-                    onClick={() => {
-                      if (confirm('Cancel this request?')) void queueOp('cancelRide', { id: r.id });
-                    }}
-                  >
-                    Cancel
-                  </button>
+                {(r.status === 'open' || r.status === 'claimed') && (
+                  <span class="row-actions">
+                    <button
+                      class="icon-btn"
+                      aria-label="Change this lift"
+                      onClick={() => {
+                        setSeen(markSeen(r.id, signal(r)));
+                        setEditingRide(r);
+                      }}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      class="icon-btn icon-btn--danger"
+                      aria-label="Cancel this lift"
+                      onClick={() => {
+                        if (confirm('Cancel this request?')) void queueOp('cancelRide', { id: r.id });
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
                 )}
               </li>
             ))}
@@ -131,6 +176,20 @@ export function Rides({ me, onDrive }: Props) {
                   >
                     ⋯
                   </button>
+                  {/* Stepping back from a favour shouldn't destroy the request —
+                      it goes back on the board for someone else. */}
+                  <button
+                    class="icon-btn icon-btn--danger"
+                    aria-label="Hand this lift back"
+                    title="Hand it back"
+                    onClick={() => {
+                      if (confirm(`Hand this lift back? ${r.passenger} will see it as open again.`)) {
+                        void queueOp('releaseRide', { id: r.id });
+                      }
+                    }}
+                  >
+                    ↩
+                  </button>
                 </span>
               )}
               {r.status === 'claimed' && r.driver !== me && (
@@ -162,17 +221,29 @@ function StatusLine({ request }: { request: RideRequest }) {
   }
 }
 
-function AskForm({ me, onClose }: { me: string; onClose: () => void }) {
+function AskForm({
+  me,
+  request,
+  onClose,
+}: {
+  me: string;
+  /** Set when the person who asked is changing their own request. */
+  request?: RideRequest;
+  onClose: () => void;
+}) {
   const { bootstrap } = useApp();
   const places = bootstrap?.places ?? [];
   const spots = bootstrap?.spots ?? [];
   const members = (bootstrap?.members ?? []).filter((m) => m.name !== me);
 
-  const [when, setWhen] = useState(localDateTimeInput(new Date()));
-  const [from, setFrom] = useState('Quinta');
-  const [to, setTo] = useState('');
-  const [others, setOthers] = useState<string[]>([]);
-  const [notes, setNotes] = useState('');
+  const editing = !!request;
+  const [when, setWhen] = useState(
+    localDateTimeInput(request ? new Date(request.when) : new Date()),
+  );
+  const [from, setFrom] = useState(request?.from ?? 'Quinta');
+  const [to, setTo] = useState(request?.to ?? '');
+  const [others, setOthers] = useState<string[]>(request?.others ?? []);
+  const [notes, setNotes] = useState(request?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
   const destinations = [
@@ -182,21 +253,28 @@ function AskForm({ me, onClose }: { me: string; onClose: () => void }) {
 
   const save = async () => {
     setSaving(true);
-    await queueOp('requestRide', {
-      id: newClientId(),
-      passenger: me,
-      others,
-      when: new Date(when).toISOString(),
-      from,
-      to,
-      notes,
-    });
+    const at = new Date(when).toISOString();
+    if (request) {
+      // Only what the person asking owns — who is driving and what state it's
+      // in are not theirs to change from here.
+      await queueOp('editRide', { id: request.id, when: at, from, to, notes });
+    } else {
+      await queueOp('requestRide', {
+        id: newClientId(),
+        passenger: me,
+        others,
+        when: at,
+        from,
+        to,
+        notes,
+      });
+    }
     onClose();
   };
 
   return (
     <div class="card">
-      <p class="kicker">Ask for a ride</p>
+      <p class="kicker">{editing ? 'Change your lift' : 'Ask for a ride'}</p>
 
       <label class="field">
         <span>When</span>
@@ -273,7 +351,7 @@ function AskForm({ me, onClose }: { me: string; onClose: () => void }) {
           Cancel
         </button>
         <button class="btn" disabled={!to.trim() || saving} onClick={() => void save()}>
-          {saving ? 'Asking…' : 'Ask'}
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Ask'}
         </button>
       </div>
     </div>

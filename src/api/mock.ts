@@ -16,6 +16,8 @@ import type {
   RequestRidePayload,
   ClaimRidePayload,
   CancelRidePayload,
+  EditRidePayload,
+  ReleaseRidePayload,
   LogRidePayload,
   DeleteKarmaPayload,
   DeleteTripPayload,
@@ -481,6 +483,35 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
         rideRequests: bootstrap.rideRequests.map((r) =>
           r.id === id && r.status === 'open' ? { ...r, status: 'claimed', driver } : r,
         ),
+      };
+    }
+
+    // Mirrors editRide_: the four fields the requester owns, nothing else.
+    if (op.op === 'editRide') {
+      const e = op.payload as EditRidePayload;
+      bootstrap = {
+        ...bootstrap,
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === e.id ? { ...r, when: e.when, from: e.from, to: e.to, notes: e.notes } : r,
+        ),
+      };
+    }
+
+    // Mirrors releaseRide_: back to open, driver cleared, karma taken back —
+    // not a cancellation, the request survives for someone else.
+    if (op.op === 'releaseRide') {
+      const { id } = op.payload as ReleaseRidePayload;
+      const ride = bootstrap.rideRequests.find((r) => r.id === id);
+      bootstrap = {
+        ...bootstrap,
+        rideRequests: bootstrap.rideRequests.map((r) =>
+          r.id === id ? { ...r, status: 'open' as const, driver: '' } : r,
+        ),
+        karmaLog: ride
+          ? bootstrap.karmaLog.filter(
+              (k) => !(k.name === ride.driver && /dr(o|i)ve|lift|taxi/i.test(k.action)),
+            )
+          : bootstrap.karmaLog,
       };
     }
 

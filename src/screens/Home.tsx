@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Route } from '../app';
 import type { Reservation } from '../api/types';
-import { ADMIN_MEMBER } from '../config';
+import { ADMIN_MEMBER, LIFT_HOURS } from '../config';
 import { dayRate, euro, km, personLedger } from '../lib/cost';
 import { shortDate, timeLabel } from '../lib/dates';
 import { RateCurve } from './RateCurve';
@@ -22,6 +22,17 @@ interface Booking {
   onLog: (go: (route: Route) => void) => void;
   onCancel: () => void;
   onJoin: (join: boolean) => void;
+}
+
+/** A window in which the car is spoken for, whatever kind of booking made it. */
+interface Busy {
+  start: number;
+  end: number;
+  who: string;
+  what: string;
+  lift: boolean;
+  /** Absent on lifts — their details live on the ride request. */
+  reservation?: Reservation;
 }
 
 interface Props {
@@ -57,19 +68,53 @@ export function Home({ me, onNavigate }: Props) {
     );
   };
 
-  const active = reservations.find(
-    (r) => new Date(r.start).getTime() <= now && new Date(r.end).getTime() >= now,
-  );
-  const upcoming = reservations
+  const rides = bootstrap?.rideRequests ?? [];
+
+  /**
+   * Every window in which the car is spoken for — bookings and claimed lifts
+   * alike. Coming up has merged the two for a while; the status card hadn't,
+   * so it would announce a reservation two days out while someone was leaving
+   * on a lift within the hour.
+   *
+   * A ride request records when it starts and nothing else, so a claimed lift
+   * gets LIFT_HOURS to occupy.
+   */
+  const busy: Busy[] = [
+    ...reservations.map((r) => ({
+      start: new Date(r.start).getTime(),
+      end: new Date(r.end).getTime(),
+      who: r.driver,
+      what: r.destination,
+      lift: false,
+      reservation: r,
+    })),
+    ...rides
+      .filter((r) => r.status === 'claimed')
+      .map((r) => ({
+        start: new Date(r.when).getTime(),
+        end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
+        who: r.driver,
+        what: [r.passenger, r.to].filter(Boolean).join(' → '),
+        lift: true,
+        reservation: undefined,
+      })),
+  ].sort((a, b) => a.start - b.start);
+
+  const active = busy.find((b) => b.start <= now && b.end >= now);
+  // The +1 and cancel are reservation-shaped; a lift is acted on from Lifts.
+  const activeBooking = active?.reservation;
+  const upcoming = busy.filter((b) => b.start > now);
+
+  // Coming up builds its reservation rows from the reservations themselves —
+  // the merged list above exists for the status card, which only needs windows.
+  const upcomingReservations = reservations
     .filter((r) => new Date(r.start).getTime() > now)
     .sort((a, b) => a.start.localeCompare(b.start));
-
-  const rides = bootstrap?.rideRequests ?? [];
 
   // A claimed lift ties the car up exactly like a booking does, so the two sit
   // in one list rather than making people look in two places.
   const booked: Booking[] = [
-    ...upcoming.map((r) => ({
+    ...upcomingReservations.map((r) => ({
       id: r.id,
       driver: r.driver,
       passenger: '',
@@ -127,7 +172,7 @@ export function Home({ me, onNavigate }: Props) {
         onJoin: (join: boolean) => void queueOp('joinReservation', { id: r.id, name: me, join }),
       })),
     ...rides
-    .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() <= now)
+    .filter((r) => r.status === 'claimed' && new Date(r.when).getTime() + LIFT_HOURS * 3600_000 <= now)
     .map((r) => ({
       id: r.id,
       driver: r.driver,
@@ -172,33 +217,33 @@ export function Home({ me, onNavigate }: Props) {
             {/* Someone is most likely to want in while the car is actually
                 leaving, so the join button matters more here than on a booking
                 that's still hours away. */}
-            {active && active.driver !== me && (
+            {activeBooking && activeBooking.driver !== me && (
               <button
                 class="icon-btn icon-btn--join"
-                aria-pressed={active.riders.includes(me)}
-                aria-label={active.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
-                title={active.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                aria-pressed={activeBooking.riders.includes(me)}
+                aria-label={activeBooking.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
+                title={activeBooking.riders.includes(me) ? 'Leave this trip' : 'Add me to this trip'}
                 onClick={() =>
                   void queueOp('joinReservation', {
-                    id: active.id,
+                    id: activeBooking.id,
                     name: me,
-                    join: !active.riders.includes(me),
+                    join: !activeBooking.riders.includes(me),
                   })
                 }
               >
-                {active.riders.includes(me) ? '−1' : '+1'}
+                {activeBooking.riders.includes(me) ? '−1' : '+1'}
               </button>
             )}
             {/* Plans fall through. Without this the car reads as taken until the
                 booking runs out, and the only way to release it was to find the
                 row in Coming up — which the active one has already left. */}
-            {active && active.driver === me && (
+            {activeBooking && activeBooking.driver === me && (
               <button
                 class="icon-btn icon-btn--danger"
                 aria-label="Cancel this booking"
                 onClick={() => {
-                  if (confirm(`Cancel your ${active.destination || 'booking'}? The car shows as free again.`)) {
-                    void queueOp('cancelReservation', { id: active.id });
+                  if (confirm(`Cancel your ${activeBooking.destination || 'booking'}? The car shows as free again.`)) {
+                    void queueOp('cancelReservation', { id: activeBooking.id });
                   }
                 }}
               >
@@ -220,17 +265,25 @@ export function Home({ me, onNavigate }: Props) {
         {active ? (
           // Tappable for the same reason the Coming up rows are: the driver goes
           // to the form, everyone else to the read-only page.
-          <button class="row-btn card-btn" onClick={() => openBooking(active)}>
+          <button
+            class="row-btn card-btn"
+            onClick={() =>
+              activeBooking ? openBooking(activeBooking) : onNavigate({ name: 'rides' })
+            }
+          >
             <span>
               <p class="status-line">
-                {active.driver === me ? 'You have it' : `${active.driver} has it`}
-                {active.driver !== me && hasChanged(seen, active.id, active.updated) && (
-                  <span class="tag tag--alert">changed</span>
-                )}
+                {active.who === me ? 'You have it' : `${active.who} has it`}
+                {active.lift && <span class="tag">lift</span>}
+                {activeBooking &&
+                  activeBooking.driver !== me &&
+                  hasChanged(seen, activeBooking.id, activeBooking.updated) && (
+                    <span class="tag tag--alert">changed</span>
+                  )}
               </p>
               <p class="muted">
-                until {timeLabel(active.end)}
-                {active.destination ? ` · ${active.destination}` : ''}
+                until {timeLabel(new Date(active.end).toISOString())}
+                {active.what ? ` · ${active.what}` : ''}
               </p>
             </span>
             <span class="chev"> ›</span>
@@ -241,7 +294,7 @@ export function Home({ me, onNavigate }: Props) {
             <p class="status-line">Free right now</p>
             <p class="muted">
               {upcoming.length
-                ? `Next: ${upcoming[0].driver}, ${timeLabel(upcoming[0].start)}`
+                ? `Next: ${upcoming[0].who}, ${timeLabel(new Date(upcoming[0].start).toISOString())}${upcoming[0].lift ? ' (lift)' : ''}`
                 : 'Nothing booked'}
             </p>
           </>

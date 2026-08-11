@@ -170,6 +170,8 @@ export type OpName =
   | 'settleUp'
   | 'requestRide'
   | 'claimRide'
+  | 'editRide'
+  | 'releaseRide'
   | 'cancelRide'
   | 'joinReservation'
   | 'joinRide'
@@ -233,6 +235,19 @@ export interface ClaimRidePayload {
 }
 
 export interface CancelRidePayload {
+  id: string;
+}
+
+/** What the person who asked for the lift owns. Driver and status aren't theirs. */
+export interface EditRidePayload {
+  id: string;
+  when: string;
+  from: string;
+  to: string;
+  notes: string;
+}
+
+export interface ReleaseRidePayload {
   id: string;
 }
 
@@ -301,6 +316,8 @@ export type OpPayload =
   | RequestRidePayload
   | ClaimRidePayload
   | CancelRidePayload
+  | EditRidePayload
+  | ReleaseRidePayload
   | JoinPayload
   | LogRidePayload
   | EditTripPayload

@@ -918,7 +918,7 @@ function showToken() {
  * versions ago — which is the failure that keeps happening, because pasting and
  * deploying are separate steps. This constant catches that.
  */
-var EXPECTED_CODE_VERSION = 14;
+var EXPECTED_CODE_VERSION = 15;
 
 function verifyInstall() {
   var required = [
@@ -938,7 +938,7 @@ function verifyInstall() {
     'knownDistance_', 'awardLiftKarma_', 'removeLiftKarma_', 'liftKarmaAction_',
     'joinReservation_', 'joinRide_', 'toggleName_', 'tripMatchesReservation_',
     'editReservation_', 'findReservationRow_', 'payingRiders_', 'isFreeRider_',
-    'deleteKarma_', 'removePayment_', 'renameKarmaAction_',
+    'deleteKarma_', 'removePayment_', 'renameKarmaAction_', 'editRide_', 'releaseRide_',
     // setup.gs
     'setupSheet', 'setupReservations_', 'setupRideRequests_', 'setupKarmaActions_',
     'setupKarmaLog_', 'setupPlaces_', 'setupPayments_', 'setupRideDays_', 'setupSettings_',

@@ -45,5 +45,8 @@ export function hasChanged(seen: Seen, id: string, updated: string): boolean {
   if (!updated) return false;
   const known = seen[id];
   if (known === undefined) return false;
-  return updated > known;
+  // Not `>`. A reservation's signal is a timestamp that only moves forward, but
+  // a lift's is `status:driver` — "claimed:Robin" versus "open:" — where
+  // ordering means nothing. Difference is the thing that matters either way.
+  return updated !== known;
 }

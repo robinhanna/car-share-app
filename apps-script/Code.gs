@@ -17,7 +17,7 @@
  * bootstrap returns this number so the app can say so out loud, and
  * verifyInstall() compares it against what setup.gs expects.
  */
-var CODE_VERSION = 14;
+var CODE_VERSION = 15;
 
 var SHEETS = {
   settings: 'Settings',
@@ -151,6 +151,8 @@ function applyOp_(op) {
     case 'settleUp': return settleUp_(op.clientId, op.payload || {});
     case 'requestRide': return requestRide_(op.clientId, op.payload || {});
     case 'claimRide': return claimRide_(op.payload || {});
+    case 'editRide': return editRide_(op.payload || {});
+    case 'releaseRide': return releaseRide_(op.payload || {});
     case 'cancelRide': return cancelRide_(op.payload || {});
     case 'joinReservation': return joinReservation_(op.payload || {});
     case 'joinRide': return joinRide_(op.payload || {});
@@ -887,6 +889,56 @@ function requestRide_(clientId, p) {
     clientId,
   ]]);
   return { row: row, id: id };
+}
+
+/**
+ * Changes a lift request. Only the four things the person asking owns —
+ * driver and status are not theirs to move, which is what separates this from
+ * claiming or cancelling.
+ */
+function editRide_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var row = findRideRequest_(sheet, p.id);
+  if (!row) throw new Error('Ride request not found: ' + p.id);
+
+  var status = String(sheet.getRange(row, RIDE_REQ.status).getValue()).trim();
+  if (status === 'done' || status === 'cancelled') {
+    throw new Error('That lift is ' + status + ' — it can no longer be changed.');
+  }
+
+  if (p.when) sheet.getRange(row, RIDE_REQ.when).setValue(new Date(p.when));
+  sheet.getRange(row, RIDE_REQ.from).setValue(p.from || '');
+  sheet.getRange(row, RIDE_REQ.to).setValue(p.to || '');
+  sheet.getRange(row, RIDE_REQ.notes).setValue(p.notes || '');
+  return { id: p.id, row: row };
+}
+
+/**
+ * The driver hands a lift back.
+ *
+ * Not a cancellation — the request survives and goes back to `open` for
+ * someone else to take. The karma awarded for claiming has to come off with
+ * it, or stepping away from a favour still pays for having offered.
+ *
+ * closeRideRequest_ can't do this: it only ever *sets* a driver, and this
+ * needs the cell emptied.
+ */
+function releaseRide_(p) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.rideRequests);
+  var row = findRideRequest_(sheet, p.id);
+  if (!row) throw new Error('Ride request not found: ' + p.id);
+
+  var status = String(sheet.getRange(row, RIDE_REQ.status).getValue()).trim();
+  if (status !== 'claimed') {
+    throw new Error('That lift is ' + status + ' — there is nothing to hand back.');
+  }
+
+  sheet.getRange(row, RIDE_REQ.status).setValue('open');
+  sheet.getRange(row, RIDE_REQ.driver).setValue('');
+  removeLiftKarma_(ss, p.id);
+  return { id: p.id, status: 'open' };
 }
 
 function claimRide_(p) {
