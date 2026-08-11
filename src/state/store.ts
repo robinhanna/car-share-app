@@ -6,6 +6,8 @@ import {
   enqueue,
   readCachedBootstrap,
   readOutbox,
+  removeFromOutbox,
+  unmarkRejected,
   type QueuedOp,
 } from '../offline/outbox';
 import { flushOutbox } from '../offline/sync';
@@ -114,5 +116,24 @@ export async function queueOp(op: OpName, payload: OpPayload): Promise<string> {
 
 export function getState(): AppState {
   return state;
+}
+
+/**
+ * Throws a write away for good. The only route out of the queue other than the
+ * Sheet accepting it — deliberately a person's decision, since the app deleting
+ * writes on its own is exactly the bug this replaced.
+ */
+export async function discardWrite(clientId: string): Promise<void> {
+  await removeFromOutbox([clientId]);
+  await refreshPending();
+}
+
+/** Clears the rejected flag and tries again. */
+export async function retryRejected(): Promise<void> {
+  const stuck = state.pending.filter((p) => p.rejected).map((p) => p.clientId);
+  if (!stuck.length) return;
+  await unmarkRejected(stuck);
+  await refreshPending();
+  await sync();
 }
 

@@ -29,17 +29,25 @@ async function doFlush(): Promise<FlushResult> {
 
   const ops = queued.map(({ clientId, op, payload }) => ({ clientId, op, payload }));
 
+  const allIds = queued.map((q) => q.clientId);
+
   let response;
   try {
     response = await postOps(ops);
   } catch (err) {
-    // Network-level failure: nothing reached the Sheet, so keep everything
-    // queued and count the attempt.
-    await markAttempted(
-      queued.map((q) => q.clientId),
-      err instanceof Error ? err.message : String(err),
-    );
+    // Couldn't reach the Sheet. That says nothing about the writes themselves,
+    // so they stay queued and unrejected — this is the ordinary offline path.
+    await markAttempted(allIds, err instanceof Error ? err.message : String(err));
     throw err;
+  }
+
+  // A batch rejected outright — a bad token, or doPost throwing — comes back
+  // with no `results` at all. That used to fall straight through as
+  // { sent: 0, failed: 0 }: the queue sat there and the app reported success.
+  if (response.ok === false) {
+    const error = response.error ?? 'The Sheet rejected the whole batch.';
+    await markAttempted(allIds, error);
+    throw new Error(error);
   }
 
   const results = response.results ?? [];
@@ -48,9 +56,10 @@ async function doFlush(): Promise<FlushResult> {
 
   await removeFromOutbox(succeeded);
   if (failed.length) {
-    await markAttempted(
-      failed.map((r) => r.clientId),
-      failed[0].error ?? 'Rejected by the Sheet',
+    // Per-op refusal: the Sheet read this one and said no. Flagged for a person
+    // to look at rather than retried into the void.
+    await Promise.all(
+      failed.map((r) => markAttempted([r.clientId], r.error ?? 'Rejected by the Sheet', true)),
     );
   }
 

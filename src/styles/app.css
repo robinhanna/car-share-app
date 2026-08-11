@@ -654,3 +654,31 @@ h1 + .spacer + .card {
   font-size: 14px;
   font-weight: 600;
 }
+
+/*
+ * Writes the sheet refused. Deliberately loud and deliberately sticky: the bug
+ * this replaced deleted them silently after five tries, so the one thing this
+ * must never do is let one slip past unnoticed.
+ */
+.stuck {
+  display: block;
+}
+
+.stuck p {
+  margin: 0 0 8px;
+}
+
+.stuck .list li {
+  border-bottom-color: rgba(192, 43, 10, 0.25);
+  align-items: flex-start;
+}
+
+.stuck .muted {
+  font-size: 13px;
+  color: var(--rust);
+  opacity: 0.8;
+}
+
+.stuck .btn {
+  margin-top: 10px;
+}

@@ -391,6 +391,9 @@ export async function mockPost(ops: Op[]): Promise<PostResponse> {
           return {
             ...t,
             date: e.date,
+            // editTrip_ writes the driver, so the mock must too — without this
+            // it silently kept the old one and reassigning a trip looked broken.
+            driver: e.driver,
             destination: e.destination,
             activity: e.activity,
             // editTrip_ overwrites the cell with whatever the client sends, so

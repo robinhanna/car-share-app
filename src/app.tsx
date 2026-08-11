@@ -3,7 +3,8 @@ import type { Reservation, RideRequest, Trip } from './api/types';
 import { EXPECTED_CODE_VERSION } from './config';
 import type { TripCost } from './lib/cost';
 import { clearMe, getMe, setMe } from './state/me';
-import { sync, useApp } from './state/store';
+import { describeOp } from './offline/outbox';
+import { discardWrite, retryRejected, sync, useApp } from './state/store';
 import { Balance } from './screens/Balance';
 import { BookingDetail } from './screens/BookingDetail';
 import { Home } from './screens/Home';
@@ -149,6 +150,8 @@ export function App() {
 
 function Banners() {
   const { pending, online, syncing, error, bootstrap } = useApp();
+  const stuck = pending.filter((p) => p.rejected);
+  const waiting = pending.filter((p) => !p.rejected);
 
   // Pasting the Apps Script and deploying it are separate steps, and skipping
   // the second one looks exactly like the app being broken: writes go through,
@@ -166,10 +169,48 @@ function Banners() {
           some changes won't stick.
         </div>
       )}
-      {pending.length > 0 && (
+      {/* Writes the Sheet actually refused. These used to be deleted after five
+          tries without a word, so a trip could be logged and simply never
+          exist. Nothing leaves the queue now unless someone says so. */}
+      {stuck.length > 0 && (
+        <div class="banner banner--error stuck">
+          <p>
+            <strong>
+              {stuck.length} change{stuck.length === 1 ? '' : 's'} the sheet wouldn't take
+            </strong>
+          </p>
+          <ul class="list">
+            {stuck.map((q) => (
+              <li key={q.clientId}>
+                <span>
+                  {describeOp(q)}
+                  <br />
+                  <span class="muted">{q.lastError}</span>
+                </span>
+                <button
+                  class="icon-btn icon-btn--danger"
+                  aria-label="Discard this change"
+                  onClick={() => {
+                    if (confirm(`Discard "${describeOp(q)}" for good?`)) {
+                      void discardWrite(q.clientId);
+                    }
+                  }}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button class="btn btn--secondary" onClick={() => void retryRejected()}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {waiting.length > 0 && (
         <div class="banner banner--pending">
           <span>
-            {pending.length} change{pending.length === 1 ? '' : 's'} waiting to sync
+            {waiting.length} change{waiting.length === 1 ? '' : 's'} waiting to sync
             {online ? '' : ' — no signal'}
           </span>
           {online && !syncing && (

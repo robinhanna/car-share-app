@@ -61,6 +61,10 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   );
   const [odoStart, setOdoStart] = useState('');
   const [odoEnd, setOdoEnd] = useState('');
+  // Whoever actually drove, which isn't always whoever is holding the phone.
+  // Robin logged a trip for Jonas and it went into the sheet under Robin,
+  // because this was pinned to the current user with no way to say otherwise.
+  const [driver, setDriver] = useState(trip?.driver ?? reservation?.driver ?? ride?.driver ?? me);
   const [riders, setRiders] = useState<string[]>(
     trip
       ? trip.riders
@@ -125,7 +129,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
     const common = {
       date: new Date(from).toISOString(),
       until: until ? new Date(until).toISOString() : '',
-      driver: me,
+      driver,
       destination,
       activity: mode === 'spot' ? destinationValue.activity : '',
       manualKm: mode === 'manual' ? numOrNull(manualKm) : null,
@@ -142,7 +146,7 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
     };
 
     if (trip) {
-      await queueOp('editTrip', { ...common, tripId: trip.id, driver: trip.driver });
+      await queueOp('editTrip', { ...common, tripId: trip.id });
     } else {
       await queueOp('completeTrip', {
         ...common,
@@ -289,7 +293,27 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
         </label>
       )}
 
-      <RiderPicker me={me} selected={riders} onChange={setRiders} />
+      <label class="field">
+        <span>Who drove?</span>
+        <select
+          value={driver}
+          onChange={(e) => {
+            const name = (e.target as HTMLSelectElement).value;
+            setDriver(name);
+            // Nobody is both the driver and a passenger on the same trip.
+            setRiders((r) => r.filter((n) => n !== name));
+          }}
+        >
+          {(bootstrap?.members ?? []).map((m) => (
+            <option key={m.name} value={m.name}>
+              {m.name}
+              {m.name === me ? ' (you)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <RiderPicker me={driver} selected={riders} onChange={setRiders} />
 
       <div class="field">
         <span>Boards on the roof?</span>

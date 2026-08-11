@@ -659,6 +659,14 @@ function setupTripLog_(ss) {
     .build();
   sheet.getRange(FIRST_DATA_ROW, TRIP.tripType, rows, 1).setDataValidation(tripType);
 
+  // The Destination column inherited a surf-spot dropdown from the original
+  // xlsx, so every typed-in place ("Favo", a town, an activity) picks up a
+  // warning triangle. The app supports naming somewhere that isn't on any list,
+  // so the rule contradicts the product — and on a sheet where three bugs have
+  // hidden behind plausible-looking cells, teaching people that warnings are
+  // normal is the expensive part.
+  sheet.getRange(FIRST_DATA_ROW, TRIP.destination, rows, 1).clearDataValidations();
+
   writeFuelFormulas_(sheet, Math.max(sheet.getLastRow(), 24));
 
   // Default the trip type first, so the distance formula has something to read
