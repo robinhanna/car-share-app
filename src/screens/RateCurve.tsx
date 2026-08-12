@@ -33,50 +33,50 @@ export function RateCurve({ members, settings }: Props) {
   const days = members.find((m) => m.included)?.daysActive || 25;
   const span = Math.max(riders * days, riderDays * 1.5, 25);
 
-  const W = 100;
-  const H = 30;
-  const PAD = 3; // keeps the stroke off the top and bottom edges
-  const top = rateAt(0);
-  const bottom = rateAt(span);
-  const x = (rd: number) => (rd / span) * W;
-  const y = (rate: number) =>
-    H - PAD - ((rate - bottom) / (top - bottom || 1)) * (H - PAD * 2);
-
-  const points: string[] = [];
-  for (let i = 0; i <= 32; i++) {
-    const rd = (span / 32) * i;
-    points.push(`${x(rd).toFixed(2)},${y(rateAt(rd)).toFixed(2)}`);
-  }
-
-  const here = Math.min(riderDays, span);
+  // The gauge runs between the rate before anyone rode and the rate if everyone
+  // rode every day. It starts full and drains — a tank emptying, not a bar
+  // filling. A horizontal bar was tried and read as a loading bar, so growing
+  // fill said the price was climbing however it was labelled.
+  const ceiling = rateAt(0);
+  const floor = rateAt(span);
   const now = rateAt(riderDays);
+  const fill = Math.max(0, Math.min(100, ((now - floor) / (ceiling - floor || 1)) * 100));
 
   // Measured against the rate before anyone had ridden at all, so the number
   // answers "what has riding along already saved me" rather than "what is one
   // more day worth" — the passenger's question, not the driver's.
-  const start = rateAt(0);
-  const drop = start - now;
-  const dropPct = start > 0 ? (drop / start) * 100 : 0;
+  const drop = ceiling - now;
+  const dropPct = ceiling > 0 ? (drop / ceiling) * 100 : 0;
 
   return (
     <div class="rate-curve">
-      {/* "day rate" spelled out: the figure is per day in the car, and a bare
-          "rate" left people reading it as a total. */}
-      <p class="eyebrow">Current ride-along day rate</p>
-      <p class="rate-now">
-        {euro(now)}
-        {drop > 0.005 && (
-          <span class="rate-drop">
-            ↓ {euro(drop)} ({Math.round(dropPct)}%)
-          </span>
-        )}
-      </p>
-      {/* Stretched to fill the card, so the marker is a vertical rule rather
-          than a dot — a circle would render as a squashed ellipse. */}
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <polyline points={points.join(' ')} />
-        <line class="marker" x1={x(here)} y1={y(now)} x2={x(here)} y2={H} />
-      </svg>
+      <div class="rate-text">
+        {/* "day rate" spelled out: the figure is per day in the car, and a bare
+            "rate" left people reading it as a total. */}
+        <p class="eyebrow">Current ride-along day rate</p>
+        <p class="rate-now">
+          {euro(now)}
+          {drop > 0.005 && (
+            <span class="rate-drop">
+              ↓ {euro(drop)} ({Math.round(dropPct)}%)
+            </span>
+          )}
+        </p>
+        <p class="muted">
+          Falls further as more rides get logged — every ride adds a day to the pot it's
+          split across, <strong>retroactively, for everyone</strong>.
+        </p>
+      </div>
+
+      {/* The numbers are in the labels, so the tank itself is decoration. */}
+      <div class="gauge">
+        <span class="gauge-end">{euro(ceiling)}</span>
+        <div class="gauge-track" aria-hidden="true">
+          <div class="gauge-fill" style={`height:${fill.toFixed(1)}%`} />
+          <div class="gauge-marker" style={`bottom:${fill.toFixed(1)}%`} />
+        </div>
+        <span class="gauge-end">{euro(floor)}</span>
+      </div>
     </div>
   );
 }

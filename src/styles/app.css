@@ -600,37 +600,25 @@ h1 + .spacer + .card {
 }
 
 /*
- * The day rate falling as more people ride. Small on purpose — it's a nudge to
- * carpool sitting under the status line, not a dashboard, and the status card
- * must not push "Log a trip" off the first screen.
+ * The day rate falling as more people ride, as a tank that drains.
+ *
+ * A horizontal bar was tried and rejected: it reads as a loading bar, so a
+ * growing fill said the price was climbing however it was labelled. Vertical
+ * borrows mercury falling and a fuel gauge emptying, with no such association
+ * to fight in the first place.
  */
 .rate-curve {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--sand);
 }
 
-.rate-curve svg {
-  display: block;
-  width: 100%;
-  height: 34px;
-  overflow: visible;
-}
-
-.rate-curve polyline {
-  fill: none;
-  stroke: var(--teal);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.rate-curve .marker {
-  stroke: var(--coral);
-  stroke-width: 2;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+.rate-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .rate-curve .eyebrow {
@@ -641,7 +629,7 @@ h1 + .spacer + .card {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 20px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -653,6 +641,55 @@ h1 + .spacer + .card {
   color: var(--teal-dark);
   font-size: 14px;
   font-weight: 600;
+}
+
+.rate-text .muted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gauge {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.gauge-end {
+  font-family: var(--font-label);
+  font-size: 10px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-track {
+  position: relative;
+  width: 18px;
+  height: 92px;
+  border-radius: 9px;
+  background: var(--sand);
+}
+
+.gauge-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 18px;
+  background: var(--teal-dark);
+  border-radius: 0 0 9px 9px;
+}
+
+/* Overhangs the track so "you are here" reads against the tank, not inside it —
+   the same coral convention the sparkline used for its marker. */
+.gauge-marker {
+  position: absolute;
+  left: -5px;
+  width: 28px;
+  height: 2px;
+  background: var(--coral);
+  border-radius: 1px;
 }
 
 /*
