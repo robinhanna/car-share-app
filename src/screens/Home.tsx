@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Route } from '../app';
-import type { Reservation } from '../api/types';
+import type { Reservation, RideRequest } from '../api/types';
 import { ADMIN_MEMBER, LIFT_HOURS } from '../config';
 import { dayRate, euro, km, personLedger } from '../lib/cost';
 import { shortDate, timeLabel } from '../lib/dates';
@@ -9,6 +9,18 @@ import { getSeen, hasChanged, markSeen } from '../state/seen';
 import { queueOp, sync, useApp } from '../state/store';
 
 /** A reservation or a claimed lift — both block the car, so both show together. */
+
+/**
+ * Where a lift actually goes. The old label read "Lucia → Lagos", pointing an
+ * arrow from a person at a place — it looked like a route and wasn't one, and
+ * the origin, which is what a driver weighs up before taking a request, was
+ * missing. No fallback origin: a request with no `from` reads as the
+ * destination alone rather than claiming a Quinta nobody typed.
+ */
+function liftRoute(r: RideRequest): string {
+  return [r.from, r.to].filter(Boolean).join(' → ');
+}
+
 interface Booking {
   id: string;
   driver: string;
@@ -100,7 +112,7 @@ export function Home({ me, onNavigate }: Props) {
         start: new Date(r.when).getTime(),
         end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
         who: r.driver,
-        what: [r.passenger, r.to].filter(Boolean).join(' → '),
+        what: liftRoute(r),
         lift: true,
         reservation: undefined,
       })),
@@ -143,7 +155,7 @@ export function Home({ me, onNavigate }: Props) {
         id: r.id,
         driver: r.driver,
         passenger: r.passenger,
-        what: [r.passenger, r.to].filter(Boolean).join(' → '),
+        what: liftRoute(r),
         when: timeLabel(r.when),
         start: new Date(r.when).getTime(),
         end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
@@ -163,7 +175,7 @@ export function Home({ me, onNavigate }: Props) {
         id: r.id,
         driver: '',
         passenger: r.passenger,
-        what: [r.passenger, r.to].filter(Boolean).join(' → '),
+        what: liftRoute(r),
         when: timeLabel(r.when),
         start: new Date(r.when).getTime(),
         end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
@@ -229,7 +241,7 @@ export function Home({ me, onNavigate }: Props) {
       id: r.id,
       driver: r.driver,
       passenger: r.passenger,
-      what: [r.passenger, r.to].filter(Boolean).join(' → '),
+      what: liftRoute(r),
       when: timeLabel(r.when),
       start: new Date(r.when).getTime(),
       end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,

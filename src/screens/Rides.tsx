@@ -17,6 +17,9 @@ interface Props {
  * kitchen is the cost rule: a claimed ride becomes a taxi run when it's logged,
  * so the driver pays nothing for doing someone a favour.
  */
+/** Not a place name anyone can type, so it can't collide with a real one. */
+const OTHER = '\u0000somewhere-else';
+
 export function Rides({ me, onDrive }: Props) {
   const { bootstrap } = useApp();
   const requests = bootstrap?.rideRequests ?? [];
@@ -233,7 +236,6 @@ function AskForm({
 }) {
   const { bootstrap } = useApp();
   const places = bootstrap?.places ?? [];
-  const spots = bootstrap?.spots ?? [];
   const members = (bootstrap?.members ?? []).filter((m) => m.name !== me);
 
   const editing = !!request;
@@ -246,10 +248,37 @@ function AskForm({
   const [notes, setNotes] = useState(request?.notes ?? '');
   const [saving, setSaving] = useState(false);
 
-  const destinations = [
-    ...places.filter((p) => p.category === 'Town').map((p) => p.name),
-    ...spots.map((s) => s.name),
-  ];
+  // Towns only. A lift is a drop-off — the shop, the bus, town — and putting a
+  // dozen surf breaks in front of that is noise on the one screen where speed
+  // is the point. Anywhere else gets typed.
+  const towns = places.filter((p) => p.category === 'Town').map((p) => p.name);
+
+  // Both flags initialise from the value, not from false: editing a request
+  // whose destination was typed has to reopen showing what was typed, or the
+  // form blanks it the moment it opens.
+  const [fromOther, setFromOther] = useState(
+    !!request?.from && request.from !== 'Quinta' && !towns.includes(request.from),
+  );
+  const [toOther, setToOther] = useState(!!request?.to && !towns.includes(request.to));
+
+  /**
+   * Choosing from the list or stepping out of it. Picking "Somewhere else"
+   * clears the value so the text box starts empty rather than showing the town
+   * you just moved away from.
+   */
+  const pick = (
+    value: string,
+    setValue: (v: string) => void,
+    setOther: (v: boolean) => void,
+  ) => {
+    if (value === OTHER) {
+      setOther(true);
+      setValue('');
+    } else {
+      setOther(false);
+      setValue(value);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -288,30 +317,62 @@ function AskForm({
       <div class="row">
         <label class="field">
           <span>From</span>
-          <select value={from} onChange={(e) => setFrom((e.target as HTMLSelectElement).value)}>
+          <select
+            value={fromOther ? OTHER : from}
+            onChange={(e) => pick((e.target as HTMLSelectElement).value, setFrom, setFromOther)}
+          >
             <option value="Quinta">Quinta</option>
-            {destinations.map((d) => (
+            {towns.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
+            <option value={OTHER}>Somewhere else</option>
           </select>
         </label>
 
         <label class="field">
           <span>To</span>
-          {/* A real list, not a datalist: a typed place the distance lookup
-              can't resolve is what makes a lift price at nothing later. */}
-          <select value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
+          <select
+            value={toOther ? OTHER : to}
+            onChange={(e) => pick((e.target as HTMLSelectElement).value, setTo, setToOther)}
+          >
             <option value="">—</option>
-            {destinations.map((d) => (
+            {towns.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
+            <option value={OTHER}>Somewhere else</option>
           </select>
         </label>
       </div>
+
+      {/* Below the row, not inside it: two selects and two text boxes side by
+          side don't fit a phone. */}
+      {fromOther && (
+        <label class="field">
+          <span>From — where?</span>
+          <input
+            type="text"
+            value={from}
+            placeholder="type a place"
+            onInput={(e) => setFrom((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      )}
+
+      {toOther && (
+        <label class="field">
+          <span>To — where?</span>
+          <input
+            type="text"
+            value={to}
+            placeholder="type a place"
+            onInput={(e) => setTo((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      )}
 
       <div class="field">
         <span>Anyone with you?</span>
