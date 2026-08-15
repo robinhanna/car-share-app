@@ -48,6 +48,8 @@ interface Busy {
   end: number;
   who: string;
   what: string;
+  /** Set only on a lift: the person who asked for it. */
+  passenger?: string;
   lift: boolean;
   /** Absent on lifts — their details live on the ride request. */
   reservation?: Reservation;
@@ -113,6 +115,7 @@ export function Home({ me, onNavigate }: Props) {
         end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
         who: r.driver,
         what: liftRoute(r),
+        passenger: r.passenger,
         lift: true,
         reservation: undefined,
       })),
@@ -352,6 +355,7 @@ export function Home({ me, onNavigate }: Props) {
               <p class="muted">
                 until {timeLabel(new Date(active.end).toISOString())}
                 {active.what ? ` · ${active.what}` : ''}
+                {active.passenger ? ` · for ${active.passenger}` : ''}
               </p>
             </span>
             <span class="chev"> ›</span>
@@ -420,7 +424,14 @@ export function Home({ me, onNavigate }: Props) {
                   {changed && <span class="tag tag--alert">changed</span>}
                   {clashing.has(b.id) && <span class="tag tag--alert">clash</span>}
                   <br />
-                  <span class="muted">{b.when}</span>
+                  <span class="muted">
+                    {b.when}
+                    {/* Who asked. It belongs on the muted line rather than
+                        beside the route: the bold line already holds a driver,
+                        a destination and up to three pills, and adding a fourth
+                        name to it wraps at 375px. */}
+                    {b.passenger ? ` · for ${b.passenger}` : ''}
+                  </span>
                   {b.notes && <span class="row-note">{b.notes}</span>}
                 </span>
               );
@@ -494,7 +505,14 @@ export function Home({ me, onNavigate }: Props) {
                   {b.what ? ` · ${b.what}` : ''}
                   {b.lift && <span class="tag">lift</span>}
                   <br />
-                  <span class="muted">{b.when}</span>
+                  <span class="muted">
+                    {b.when}
+                    {/* Who asked. It belongs on the muted line rather than
+                        beside the route: the bold line already holds a driver,
+                        a destination and up to three pills, and adding a fourth
+                        name to it wraps at 375px. */}
+                    {b.passenger ? ` · for ${b.passenger}` : ''}
+                  </span>
                   {b.notes && <span class="row-note">{b.notes}</span>}
                 </span>
                 <span class="row-actions">
