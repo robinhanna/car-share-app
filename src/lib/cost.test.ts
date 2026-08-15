@@ -8,6 +8,7 @@ import {
   personLedger,
   personTripCosts,
   personTrips,
+  personDayBreakdown,
   personRideDays,
   totalMemberDays,
   totalRiderDays,
@@ -426,5 +427,53 @@ describe('person ledger', () => {
     expect(ledgers[0].balance).toBeCloseTo(25 * rate - 410, 2);
     const owedByOthers = ledgers.slice(1).reduce((sum, l) => sum + l.balance, 0);
     expect(owedByOthers).toBeCloseTo(-ledgers[0].balance, 6);
+  });
+});
+
+describe('personDayBreakdown', () => {
+  const trip = (over: Partial<Trip>): Trip =>
+    ({
+      id: over.date ?? 'x',
+      date: '2026-08-10T10:00:00.000Z',
+      driver: 'Robin',
+      destination: 'Zavial',
+      activity: '',
+      tripType: 'Round trip',
+      distanceKm: 20,
+      fuelCost: 2,
+      tolls: 0,
+      parking: 0,
+      total: 2,
+      people: 2,
+      perPerson: 1,
+      riders: ['Lucia'],
+      notes: '',
+      taxi: false,
+      boards: false,
+      origin: 'Quinta',
+      until: '',
+      ...over,
+    }) as Trip;
+
+  it('separates full days from the half a single one-way lift earns', () => {
+    const trips = [
+      trip({ date: '2026-08-10T10:00:00.000Z' }),
+      trip({ date: '2026-08-11T10:00:00.000Z', taxi: true, tripType: 'One-way' }),
+      trip({ date: '2026-08-12T10:00:00.000Z', taxi: true, tripType: 'One-way' }),
+    ];
+    expect(personDayBreakdown('Lucia', trips)).toEqual({ full: 1, half: 2 });
+  });
+
+  it('adds up to exactly what the person is charged — the invariant the two lines rest on', () => {
+    const trips = [
+      trip({ date: '2026-08-10T10:00:00.000Z' }),
+      trip({ date: '2026-08-11T10:00:00.000Z', taxi: true, tripType: 'One-way' }),
+      // A second lift the same day makes it a full day, not two halves.
+      trip({ date: '2026-08-12T08:00:00.000Z', taxi: true, tripType: 'One-way' }),
+      trip({ date: '2026-08-12T18:00:00.000Z', taxi: true, tripType: 'One-way' }),
+    ];
+    const { full, half } = personDayBreakdown('Lucia', trips);
+    expect(full + half * 0.5).toBe(personRideDays('Lucia', trips));
+    expect(full + half * 0.5).toBe(2.5);
   });
 });

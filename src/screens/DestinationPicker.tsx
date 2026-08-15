@@ -39,8 +39,10 @@ export function DestinationPicker({ value, onChange, label = 'Where to?' }: Prop
           value={isSpot ? value.place : ''}
           onChange={(e) => {
             const name = (e.target as HTMLSelectElement).value;
-            // A surf spot answers both questions at once.
-            onChange({ place: name, activity: '' });
+            // A surf spot answers both questions at once — nobody drives to
+            // Zavial for the shopping. Clearing it when the spot is cleared
+            // keeps the pair honest rather than leaving a stray Surf behind.
+            onChange({ place: name, activity: name ? 'Surf' : '' });
           }}
         >
           <option value="">—</option>

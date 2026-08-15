@@ -88,6 +88,7 @@ let bootstrap: Bootstrap = {
     { category: 'Activity', name: 'Groceries', oneWayKm: 0, notes: '' },
     { category: 'Activity', name: 'Party / night out', oneWayKm: 0, notes: '' },
     { category: 'Activity', name: 'Pharmacy', oneWayKm: 0, notes: '' },
+    { category: 'Activity', name: 'Surf', oneWayKm: 0, notes: '' },
   ],
   karmaActions: [
     { action: 'Cleaned the car', points: 1 },

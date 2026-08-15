@@ -208,11 +208,19 @@ export function splitRiders(
   return { paying, guests };
 }
 
-export function personRideDays(
+/**
+ * The same walk as personRideDays, but keeping the shape of each day rather
+ * than only the sum: how many days were charged in full and how many were the
+ * half-day a single one-way lift earns.
+ *
+ * A passenger's bill is mostly half days, and a single total can't show that.
+ * personRideDays is built on this so there is one rule, not two.
+ */
+export function personDayBreakdown(
   name: string,
   trips: Trip[],
   period?: { monthStart: string; monthEnd: string },
-): number {
+): { full: number; half: number } {
   const start = period?.monthStart.slice(0, 10);
   const end = period?.monthEnd.slice(0, 10);
 
@@ -224,7 +232,24 @@ export function personRideDays(
     if (end && day > end) return;
     byDay.set(day, [...(byDay.get(day) ?? []), t]);
   });
-  return [...byDay.values()].reduce((sum, dayTrips) => sum + dayCharge(dayTrips), 0);
+
+  let full = 0;
+  let half = 0;
+  byDay.forEach((dayTrips) => {
+    const charge = dayCharge(dayTrips);
+    if (charge === 0.5) half++;
+    else if (charge > 0) full++;
+  });
+  return { full, half };
+}
+
+export function personRideDays(
+  name: string,
+  trips: Trip[],
+  period?: { monthStart: string; monthEnd: string },
+): number {
+  const { full, half } = personDayBreakdown(name, trips, period);
+  return full + half * 0.5;
 }
 
 /** Their equal share of fuel, tolls and parking across those trips. */

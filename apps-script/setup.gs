@@ -164,6 +164,7 @@ var LATER_PLACES = [
   ['Town', 'Raposeira', 11, ''],
   ['Town', 'Praia do Barranco', 18, ''],
   ['Town', 'Praia das Furnas', 19, ''],
+  ['Activity', 'Surf', '', 'Auto-selected when a surf spot is chosen'],
 ];
 
 function addMissingPlaces_(sheet) {

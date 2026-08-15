@@ -144,8 +144,8 @@ export function Rides({ me, onDrive }: Props) {
                 <span class="muted">
                   {timeLabel(r.when)}
                   {r.from ? ` · from ${r.from}` : ''}
-                  {r.notes ? ` · ${r.notes}` : ''}
                 </span>
+                {r.notes && <span class="row-note">{r.notes}</span>}
               </span>
 
               {r.status === 'open' && (
@@ -188,7 +188,7 @@ export function Rides({ me, onDrive }: Props) {
                       }
                     }}
                   >
-                    ↩
+                    ←
                   </button>
                 </span>
               )}
@@ -288,26 +288,28 @@ function AskForm({
       <div class="row">
         <label class="field">
           <span>From</span>
-          <input
-            type="text"
-            value={from}
-            onInput={(e) => setFrom((e.target as HTMLInputElement).value)}
-          />
+          <select value={from} onChange={(e) => setFrom((e.target as HTMLSelectElement).value)}>
+            <option value="Quinta">Quinta</option>
+            {destinations.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
         </label>
+
         <label class="field">
           <span>To</span>
-          <input
-            type="text"
-            list="ride-destinations"
-            value={to}
-            placeholder="Lagos…"
-            onInput={(e) => setTo((e.target as HTMLInputElement).value)}
-          />
-          <datalist id="ride-destinations">
+          {/* A real list, not a datalist: a typed place the distance lookup
+              can't resolve is what makes a lift price at nothing later. */}
+          <select value={to} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
+            <option value="">—</option>
             {destinations.map((d) => (
-              <option key={d} value={d} />
+              <option key={d} value={d}>
+                {d}
+              </option>
             ))}
-          </datalist>
+          </select>
         </label>
       </div>
 

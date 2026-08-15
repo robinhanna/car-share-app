@@ -719,3 +719,15 @@ h1 + .spacer + .card {
 .stuck .btn {
   margin-top: 10px;
 }
+
+/* A note is context, not a heading — it sits under the row it belongs to and
+   never gets to push the list around, however much someone typed. */
+.row-note {
+  display: block;
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

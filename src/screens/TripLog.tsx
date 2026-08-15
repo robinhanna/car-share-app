@@ -49,6 +49,7 @@ export function TripLog({ onOpenTrip }: Props) {
                     {shortDate(t.date)} · {t.driver}
                     {t.riders.length ? ` +${t.riders.length}` : ''} · {km(t.distanceKm)}
                   </span>
+                  {t.notes && <span class="row-note">{t.notes}</span>}
                 </span>
                 <span class="amount">
                   {euro(t.total)}

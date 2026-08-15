@@ -49,7 +49,9 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
   );
   const [from, setFrom] = useState(defaultFrom(trip, ride, reservation));
   const [until, setUntil] = useState(defaultUntil(trip, ride, reservation));
-  const [origin, setOrigin] = useState(trip?.origin || 'Quinta');
+  // A lift knows where it started — the request said so. Defaulting to Quinta
+  // and making the driver retype it is how the origin ends up wrong.
+  const [origin, setOrigin] = useState(trip?.origin || ride?.from || 'Quinta');
   const [boards, setBoards] = useState(!!trip?.boards);
   // Names an odometer or manual trip so it isn't a blank row in the log. Keeps
   // whatever the booking called the place, so the name survives the fallback.
@@ -120,7 +122,25 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
     : null;
 
   const destination = mode === 'spot' ? destinationValue.place : label.trim();
-  const canSave = distanceKm > 0 && !saving;
+  // A trip with no name is unusable in the log — you can't tell what it was,
+  // and nobody re-checking it later can price it. One 75km row in the sheet
+  // reads as "Trip" for exactly this reason.
+  const canSave = distanceKm > 0 && destination !== '' && !saving;
+
+  /**
+   * Switching away from Spot used to lose the place you'd already chosen: the
+   * name lives in `label` outside Spot mode, and nothing carried it across. So
+   * booking Lagos, tapping Just km and typing a distance saved a nameless trip.
+   */
+  const switchMode = (next: Mode) => {
+    if (next !== 'spot' && !label.trim() && destinationValue.place) {
+      setLabel(destinationValue.place);
+    }
+    if (next === 'spot' && !destinationValue.place && label.trim()) {
+      setDestinationValue({ place: label.trim(), activity: destinationValue.activity });
+    }
+    setMode(next);
+  };
 
   const save = async () => {
     if (!cost) return;
@@ -209,13 +229,13 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       </label>
 
       <div class="segmented" style="grid-template-columns:1fr 1fr 1fr">
-        <button aria-pressed={mode === 'spot'} onClick={() => setMode('spot')}>
+        <button aria-pressed={mode === 'spot'} onClick={() => switchMode('spot')}>
           Spot
         </button>
-        <button aria-pressed={mode === 'odometer'} onClick={() => setMode('odometer')}>
+        <button aria-pressed={mode === 'odometer'} onClick={() => switchMode('odometer')}>
           Odometer
         </button>
-        <button aria-pressed={mode === 'manual'} onClick={() => setMode('manual')}>
+        <button aria-pressed={mode === 'manual'} onClick={() => switchMode('manual')}>
           Just km
         </button>
       </div>
@@ -399,13 +419,15 @@ export function LogTrip({ me, reservationId, reservation, ride, trip, onDone }: 
       </button>
       {/* A greyed-out button that says nothing is just a broken app. Reserve
           already explains its own disabled state this way. */}
-      {distanceKm <= 0 && !saving && (
+      {!canSave && !saving && (
         <p class="muted center">
-          {mode === 'spot'
-            ? 'Pick a surf spot or a town so the distance is known — or use Just km to type it.'
-            : mode === 'odometer'
-              ? 'Enter both odometer readings to work out the distance.'
-              : 'How many kilometres was it?'}
+          {distanceKm <= 0
+            ? mode === 'spot'
+              ? 'Pick a surf spot or a town so the distance is known — or use Just km to type it.'
+              : mode === 'odometer'
+                ? 'Enter both odometer readings to work out the distance.'
+                : 'How many kilometres was it?'
+            : 'Give it a name, so the trip log says where the car went.'}
         </p>
       )}
     </>

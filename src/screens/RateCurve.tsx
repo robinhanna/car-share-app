@@ -53,7 +53,7 @@ export function RateCurve({ members, settings }: Props) {
       <div class="rate-text">
         {/* "day rate" spelled out: the figure is per day in the car, and a bare
             "rate" left people reading it as a total. */}
-        <p class="eyebrow">Current ride-along day rate</p>
+        <p class="eyebrow">Current passenger day rate</p>
         <p class="rate-now">
           {euro(now)}
           {drop > 0.005 && (

@@ -15,7 +15,13 @@ interface Booking {
   passenger: string;
   what: string;
   when: string;
+  /** The window the car is spoken for, in ms — what the clash check compares. */
+  start: number;
+  end: number;
   lift: boolean;
+  /** An open request: nobody has taken it, so it can't clash with anything. */
+  open?: boolean;
+  notes?: string;
   riders: string[];
   /** Set only on reservations — a lift's details belong to the ride request. */
   reservation?: Reservation;
@@ -120,7 +126,10 @@ export function Home({ me, onNavigate }: Props) {
       passenger: '',
       what: r.destination,
       when: `${timeLabel(r.start)} – ${timeLabel(r.end)}`,
+      start: new Date(r.start).getTime(),
+      end: new Date(r.end).getTime(),
       lift: false,
+      notes: r.notes,
       riders: r.riders,
       reservation: r,
       onLog: (go: (route: Route) => void) =>
@@ -136,14 +145,54 @@ export function Home({ me, onNavigate }: Props) {
         passenger: r.passenger,
         what: [r.passenger, r.to].filter(Boolean).join(' → '),
         when: timeLabel(r.when),
+        start: new Date(r.when).getTime(),
+        end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
         lift: true,
+        notes: r.notes,
         riders: r.others,
         // Logging a lift needs no form: the request already knows everything.
         onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
         onCancel: () => void queueOp('cancelRide', { id: r.id }),
         onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
       })),
-  ].sort((a, b) => a.when.localeCompare(b.when));
+    // A request nobody has taken is still something the group should see —
+    // somebody reading Coming up is exactly the person who could take it.
+    ...rides
+      .filter((r) => r.status === 'open' && new Date(r.when).getTime() > now)
+      .map((r) => ({
+        id: r.id,
+        driver: '',
+        passenger: r.passenger,
+        what: [r.passenger, r.to].filter(Boolean).join(' → '),
+        when: timeLabel(r.when),
+        start: new Date(r.when).getTime(),
+        end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
+        lift: true,
+        open: true,
+        riders: r.others,
+        onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
+        onCancel: () => void queueOp('cancelRide', { id: r.id }),
+        onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
+      })),
+  ].sort((a, b) => a.start - b.start);
+
+  /**
+   * Two things that both need the car at once. Nobody is warned about this
+   * today — the booking form checks for a clash at the moment you save and
+   * then never mentions it again, so an overlap created by an edit is silent.
+   *
+   * Open requests are excluded: until a driver takes one, it holds nothing.
+   */
+  const clashing = new Set<string>();
+  booked.forEach((a, i) => {
+    booked.slice(i + 1).forEach((b) => {
+      if (a.open || b.open) return;
+      if (a.start < b.end && b.start < a.end) {
+        clashing.add(a.id);
+        clashing.add(b.id);
+      }
+    });
+  });
 
   // Anything the car has already done that nobody has written down yet —
   // finished bookings and lifts whose pickup time has passed. One list rather
@@ -163,7 +212,10 @@ export function Home({ me, onNavigate }: Props) {
         passenger: '',
         what: r.destination,
         when: `${timeLabel(r.start)} – ${timeLabel(r.end)}`,
+        start: new Date(r.start).getTime(),
+        end: new Date(r.end).getTime(),
         lift: false,
+        notes: r.notes,
         riders: r.riders,
         reservation: r,
         onLog: (go: (route: Route) => void) =>
@@ -179,13 +231,17 @@ export function Home({ me, onNavigate }: Props) {
       passenger: r.passenger,
       what: [r.passenger, r.to].filter(Boolean).join(' → '),
       when: timeLabel(r.when),
+      start: new Date(r.when).getTime(),
+      end: new Date(r.when).getTime() + LIFT_HOURS * 3600_000,
       lift: true,
+      notes: r.notes,
       riders: r.others,
       onLog: () => void queueOp('logRide', { id: r.id, date: new Date().toISOString() }),
       onCancel: () => void queueOp('cancelRide', { id: r.id }),
       onJoin: (join: boolean) => void queueOp('joinRide', { id: r.id, name: me, join }),
     })),
-  ].sort((a, b) => a.when.localeCompare(b.when));
+  ].sort((a, b) => a.start - b.start);
+
 
   const recent = [...(bootstrap?.recentTrips ?? [])]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -350,8 +406,10 @@ export function Home({ me, onNavigate }: Props) {
                   {b.what ? ` · ${b.what}` : ''}
                   {b.lift && <span class="tag">lift</span>}
                   {changed && <span class="tag tag--alert">changed</span>}
+                  {clashing.has(b.id) && <span class="tag tag--alert">clash</span>}
                   <br />
                   <span class="muted">{b.when}</span>
+                  {b.notes && <span class="row-note">{b.notes}</span>}
                 </span>
               );
 
@@ -425,6 +483,7 @@ export function Home({ me, onNavigate }: Props) {
                   {b.lift && <span class="tag">lift</span>}
                   <br />
                   <span class="muted">{b.when}</span>
+                  {b.notes && <span class="row-note">{b.notes}</span>}
                 </span>
                 <span class="row-actions">
                   {/* For a booking this opens the form already carrying its
@@ -466,6 +525,7 @@ export function Home({ me, onNavigate }: Props) {
                     <span class="muted">
                       {shortDate(t.date)} · {t.driver} · {km(t.distanceKm)} · {euro(t.total)}
                     </span>
+                    {t.notes && <span class="row-note">{t.notes}</span>}
                   </span>
                 </button>
                 <span class="row-actions">

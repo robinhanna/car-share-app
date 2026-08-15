@@ -8,6 +8,7 @@ import {
   km,
   personLedger,
   personPayments,
+  personDayBreakdown,
   personTrips,
 } from '../lib/cost';
 import { localDateInput, shortDate } from '../lib/dates';
@@ -31,6 +32,8 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
   const member = members.find((m) => m.name === name);
 
   const trips = personTrips(name, bootstrap?.recentTrips ?? []);
+  const sortedTrips = [...trips].sort((a, b) => b.date.localeCompare(a.date));
+  const breakdown = personDayBreakdown(name, bootstrap?.recentTrips ?? [], settings);
   const payments = personPayments(name, bootstrap?.payments ?? []);
   const karma = (bootstrap?.karmaLog ?? []).filter((k) => k.name === name);
 
@@ -44,7 +47,17 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
   }
 
   const rate = dayRate(members, settings);
+
   const ledger = personLedger(member, bootstrap?.recentTrips ?? [], bootstrap?.payments ?? [], rate);
+
+  /**
+   * The split is only shown when the trips this phone holds account for the
+   * whole charge. The charge itself comes from the sheet's ride-days; the
+   * shape of it is re-derived here from the trip list, and two lines that
+   * don't add up to the heading above them are worse than one that does.
+   */
+  const splits =
+    Math.abs(breakdown.full + breakdown.half * 0.5 - ledger.chargedDays) < 0.001;
   const owes = ledger.balance > 0.01;
 
   return (
@@ -69,13 +82,39 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
         The car <span class="total">{euro(ledger.carCharge)}</span>
       </p>
       <ul class="list">
-        <li>
-          <span>
-            {days(ledger.chargedDays)} {member.included ? "here" : "in the car"} ×{" "}
-            {euro(rate)}
-          </span>
-          <span class="amount">{euro(ledger.carCharge)}</span>
-        </li>
+        {member.included ? (
+          <li>
+            <span>
+              {days(ledger.chargedDays)} here × {euro(rate)}
+            </span>
+            <span class="amount">{euro(ledger.carCharge)}</span>
+          </li>
+        ) : splits ? (
+          <>
+            {/* A passenger's bill is mostly half days, and one total can't show
+                that. The two lines must still add up to the section heading. */}
+            <li>
+              <span>
+                {breakdown.full} full {breakdown.full === 1 ? 'day' : 'days'} × {euro(rate)}
+              </span>
+              <span class="amount">{euro(breakdown.full * rate)}</span>
+            </li>
+            <li>
+              <span>
+                {breakdown.half} {breakdown.half === 1 ? 'lift' : 'lifts'} (½ day) ×{' '}
+                {euro(rate / 2)}
+              </span>
+              <span class="amount">{euro(breakdown.half * 0.5 * rate)}</span>
+            </li>
+          </>
+        ) : (
+          <li>
+            <span>
+              {days(ledger.chargedDays)} in the car × {euro(rate)}
+            </span>
+            <span class="amount">{euro(ledger.carCharge)}</span>
+          </li>
+        )}
       </ul>
 
       <p class="section-title">
@@ -85,17 +124,21 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
         <p class="muted">No trips yet.</p>
       ) : (
         <ul class="list">
-          {trips.map((t) => (
+          {sortedTrips.map((t) => (
             <li key={t.id || `${t.date}-${t.destination}`}>
               <button class="row-btn" onClick={() => onOpenTrip(t)}>
                 <span>
                   <strong>{t.destination || 'Trip'}</strong>
                   {t.activity ? ` · ${t.activity}` : ''}
+                  {/* A lift is charged differently, so it should be visible as
+                      one on anybody's page, not only the driver's. */}
+                  {t.taxi && <span class="tag">lift</span>}
                   <br />
                   <span class="muted">
                     {shortDate(t.date)} · {km(t.distanceKm)} · {t.people} sharing
                     {t.driver === name ? ' · they drove' : ''}
                   </span>
+                  {t.notes && <span class="row-note">{t.notes}</span>}
                 </span>
                 <span class="amount">
                   {euro(t.perPerson)}
