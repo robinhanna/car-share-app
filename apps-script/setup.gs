@@ -813,8 +813,11 @@ function writeFuelFormulas_(sheet, lastRow) {
  */
 function writeCostFormulas_(sheet, lastRow) {
   for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    // Guarded on the row being empty, not on fuel being empty: a trip with
+    // parking but no distance still cost somebody money. This is what the
+    // inherited formula did, and it was right to.
     setFormulaVerified_(sheet.getRange(r, TRIP.total),
-      '=IF($F' + r + '="";"";$F' + r + '+N($G' + r + ')+N($H' + r + '))');
+      '=IF(AND($A' + r + '="";$C' + r + '="");"";N($F' + r + ')+N($G' + r + ')+N($H' + r + '))');
 
     setFormulaVerified_(sheet.getRange(r, TRIP.perPerson),
       '=IF(OR($I' + r + '="";N($J' + r + ')=0);"";$I' + r + '/$J' + r + ')');
@@ -897,6 +900,66 @@ function diagnoseTrip(row) {
   }
 
   Logger.log('Sheet names: ' + ss.getSheets().map(function (s) { return s.getName(); }).join(' | '));
+}
+
+/**
+ * Every trip on one screen, so a wrong number can be spotted against its
+ * neighbours instead of a row at a time.
+ *
+ * Reading row 3 in isolation said everything was fine, because row 3 *was*
+ * fine. What a single row can never show is whether one of them is unlike the
+ * others. Writes nothing.
+ */
+function diagnoseAllTrips() {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.trips);
+  var last = sheet.getLastRow();
+  if (last < FIRST_DATA_ROW) return Logger.log('No trips logged.');
+
+  var rows = sheet.getRange(FIRST_DATA_ROW, 1, last - 2, TRIP.boards).getValues();
+  Logger.log('row  date    destination           D     E      F      G       H       I        J   K');
+
+  rows.forEach(function (r, i) {
+    if (!String(r[TRIP.driver - 1]).trim()) return;
+    var d = r[TRIP.date - 1];
+    Logger.log(
+      pad_(FIRST_DATA_ROW + i, 5) +
+      pad_(d instanceof Date ? Utilities.formatDate(d, TIME_ZONE, 'dd MMM') : d, 8) +
+      pad_(String(r[TRIP.destination - 1]).slice(0, 20), 22) +
+      pad_(r[TRIP.manualKm - 1], 6) +
+      pad_(r[TRIP.distance - 1], 7) +
+      pad_(round2_(r[TRIP.fuel - 1]), 7) +
+      pad_(round2_(r[TRIP.tolls - 1]), 8) +
+      pad_(round2_(r[TRIP.parking - 1]), 8) +
+      pad_(round2_(r[TRIP.total - 1]), 9) +
+      pad_(r[TRIP.people - 1], 4) +
+      round2_(r[TRIP.perPerson - 1]));
+  });
+
+  // Named separately rather than left to the eye — the point of the run.
+  var flagged = [];
+  rows.forEach(function (r, i) {
+    if (!String(r[TRIP.driver - 1]).trim()) return;
+    var extras = num_(r[TRIP.tolls - 1]) + num_(r[TRIP.parking - 1]);
+    if (extras > 0 && extras > num_(r[TRIP.fuel - 1])) {
+      flagged.push('row ' + (FIRST_DATA_ROW + i) + ': EUR' + round2_(extras) +
+        ' of tolls and parking against EUR' + round2_(r[TRIP.fuel - 1]) + ' of fuel');
+    }
+    if (num_(r[TRIP.distance - 1]) > MAX_PLAUSIBLE_KM) {
+      flagged.push('row ' + (FIRST_DATA_ROW + i) + ': ' + r[TRIP.distance - 1] + ' km');
+    }
+  });
+  Logger.log(flagged.length ? 'Worth a look: ' + flagged.join(' | ') : 'Nothing looks out of place.');
+}
+
+function pad_(v, width) {
+  var s = String(v == null ? '' : v);
+  while (s.length < width) s += ' ';
+  return s;
+}
+
+function round2_(v) {
+  return Math.round(num_(v) * 100) / 100;
 }
 
 /** What a tab returns for a name, or "not found" — read-only. */
@@ -1058,7 +1121,7 @@ function verifyInstall() {
     'writeDistanceFormulas_', 'writeFuelFormulas_', 'assertNoDecimalLiterals_',
     'checkSheetHealth_', 'correctSeededPrepayment_', 'addMissingPlaces_', 'findProbeRow_', 'probeLooksRight_',
     'ensureToken_', 'showToken', 'diagnoseTripLog', 'diagnoseTrip', 'lookupDistance_',
-    'writeCostFormulas_', 'verifyInstall',
+    'writeCostFormulas_', 'diagnoseAllTrips', 'pad_', 'round2_', 'verifyInstall',
   ];
 
   var missing = [];
