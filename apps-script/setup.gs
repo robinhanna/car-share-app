@@ -1037,11 +1037,18 @@ function checkSheetHealth_(ss) {
         problems.push('row ' + row + ': ' + distance + ' km — further than this car goes. ' +
           'Check the odometer columns and the destination.');
       }
-      // A trip costing more than the whole rental is arithmetic going wrong,
-      // not an expensive drive.
-      if (total > num_(ss.getSheetByName(SHEETS.settings).getRange('B15').getValue())) {
-        problems.push('row ' + row + ': costs €' + total.toFixed(2) +
-          ' — more than the entire rental. Check columns I and K.');
+      // The bound that would actually have caught the €115 lift. "More than the
+      // whole rental" was too loose to fire on it — €115 of €410 passed — and a
+      // ceiling that misses the case it was written for is worse than none.
+      //
+      // Tolls and parking are typed by a person; fuel is computed. So extras
+      // that dwarf the fuel mean a number went in the wrong box, which is
+      // exactly what happened: €112.68 sitting beside €2.70 of petrol.
+      var extras = num_(rows[i][TRIP.tolls - 1]) + num_(rows[i][TRIP.parking - 1]);
+      if (extras > 0 && extras > fuel * 3) {
+        problems.push('row ' + row + ': €' + extras.toFixed(2) +
+          ' of tolls and parking against €' + fuel.toFixed(2) +
+          ' of fuel — check columns G and H.');
       }
       if (total <= 0) {
         problems.push('row ' + row + ': trip total reads €0.00');
