@@ -9,7 +9,8 @@ import {
   personLedger,
   personPayments,
   personDayBreakdown,
-  personTrips,
+  personTripShare,
+  personTripsShown,
 } from '../lib/cost';
 import { localDateInput, shortDate } from '../lib/dates';
 import { queueOp, useApp } from '../state/store';
@@ -31,7 +32,7 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
   const members = bootstrap?.members ?? [];
   const member = members.find((m) => m.name === name);
 
-  const trips = personTrips(name, bootstrap?.recentTrips ?? []);
+  const trips = personTripsShown(name, bootstrap?.recentTrips ?? []);
   const sortedTrips = [...trips].sort((a, b) => b.date.localeCompare(a.date));
   const breakdown = personDayBreakdown(name, bootstrap?.recentTrips ?? [], settings);
   const payments = personPayments(name, bootstrap?.payments ?? []);
@@ -141,7 +142,7 @@ export function PersonDetail({ name, me, onOpenTrip }: Props) {
                   {t.notes && <span class="row-note">{t.notes}</span>}
                 </span>
                 <span class="amount">
-                  {euro(t.perPerson)}
+                  {euro(personTripShare(name, t))}
                   <span class="chev"> ›</span>
                 </span>
               </button>

@@ -289,7 +289,10 @@ function setupSettings_(ss) {
 /** Where the car actually is. Must match the timeZone in appsscript.json. */
 var TIME_ZONE = 'Europe/Lisbon';
 
-var CONFIG_VERSION = 7;
+var CONFIG_VERSION = 8;
+
+/** Faro and back is 180 km. Nothing this group drives comes near this. */
+var MAX_PLAUSIBLE_KM = 400;
 
 /**
  * Renames a karma action wherever it appears — the Karma Actions tab and every
@@ -350,11 +353,20 @@ function migrateConfig_(ss) {
   // cash out. Both are money he laid out for the group, so both are in the pot.
   s.getRange('B14').setValue(35);
 
-  // 7.5 L/100km was a guess from before anyone had driven the car. Robin's tank
-  // reading — 224 km on just over a quarter — works out around 5.6 on a mostly
-  // motorway run, so 6.0 is his figure for the mix of driving round Almádena.
-  // Everything logged before this was overcharged by about a quarter.
-  s.getRange('B10').setValue(6.0);
+  // The refuel receipt fixes the tank size, which is what the half-tank reading
+  // needed: €69.65 at €1.913/L is 36.41 L, taken with the light on, so about
+  // 8.6 L was left of a 45 L tank — right for a 106, impossible for a 50 L one.
+  // Half of 45 L over 490 km is 4.59 L/100km.
+  //
+  // Worth knowing rather than discovering later: 4.6 is below the 106 1.4i's
+  // official combined figure of about 6. At 6.0 those 490 km would leave 15.6 L
+  // — a third of a tank, not a half — so the gauge is reading generously in its
+  // upper half and the truth is somewhere in 4.6–6.0. Robin's call. Brim to
+  // brim on two consecutive fill-ups is what would settle it.
+  s.getRange('B10').setValue(4.6);
+
+  // A receipt beats the DGEG monthly average that was in here (€2.03, 31 Jul).
+  s.getRange('B9').setValue(1.913);
 
   var members = ss.getSheetByName(SHEETS.members);
   var rows = memberRows_();
@@ -379,7 +391,7 @@ function migrateConfig_(ss) {
   correctSeededPrepayment_(ss);
 
   props.setProperty('configVersion', String(CONFIG_VERSION));
-  Logger.log('Config migrated to v' + CONFIG_VERSION + ': 7-31 Aug, €375 + €30 pickup = €405.');
+  Logger.log('Config migrated to v' + CONFIG_VERSION + ': fuel €1.913/L at 4.6 L/100km.');
 }
 
 function correctSeededPrepayment_(ss) {
@@ -669,6 +681,7 @@ function setupTripLog_(ss) {
   sheet.getRange(FIRST_DATA_ROW, TRIP.destination, rows, 1).clearDataValidations();
 
   writeFuelFormulas_(sheet, Math.max(sheet.getLastRow(), 24));
+  writeCostFormulas_(sheet, Math.max(sheet.getLastRow(), 24));
 
   // Default the trip type first, so the distance formula has something to read
   // when it recalculates.
@@ -729,8 +742,13 @@ function writeDistanceFormulas_(sheet, lastRow, sep) {
     // the "has a destination" branch, so typing a distance with no place named
     // — the whole point of the "Just km" option — produced an empty row that
     // the sheet priced at zero.
+    // Both readings, and the trip going forwards, or it isn't a measurement.
+    // The old test was AND($R="";$S=""), so filling in exactly one odometer
+    // field made the sheet compute $S-$R against a blank and store a single
+    // reading as the distance. tripDistanceKm in cost.ts has always required
+    // both, so the form's running total and the sheet would quietly disagree.
     formulas.push([
-      '=IF(AND($R' + r + '=""' + sep + '$S' + r + '="")' + sep +
+      '=IF(NOT(AND($R' + r + '<>""' + sep + '$S' + r + '<>""' + sep + '$S' + r + '>$R' + r + '))' + sep +
         'IF($D' + r + '<>""' + sep + '$D' + r + sep +
           'IF($C' + r + '=""' + sep + '""' + sep +
             "IFERROR(INDEX('Surf Spots'!$C$3:$C$55" + sep + "MATCH($C" + r +
@@ -778,6 +796,31 @@ function writeFuelFormulas_(sheet, lastRow) {
   }
 }
 
+/**
+ * Total and per-person — the two columns this codebase never wrote.
+ *
+ * Until now `ensureTripFormulas_` copied them from row 3, which came from the
+ * original spreadsheet and its old cost model: a trip there carried a share of
+ * the rental, so column I was adding money that has nothing to do with a drive.
+ * Fuel was right and the cost beside it was €112 too high, and every guard this
+ * file built — semicolons, no decimal literals, reading the answer back — was
+ * being applied to E and F and stopping at the column boundary.
+ *
+ * K guards its own division: a lift whose headcount is blank or zero returns
+ * empty rather than #DIV/0!, which num_ would otherwise read as a plausible
+ * €0.00 — the same silent-zero failure that has cost this project three
+ * rounds of debugging already.
+ */
+function writeCostFormulas_(sheet, lastRow) {
+  for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
+    setFormulaVerified_(sheet.getRange(r, TRIP.total),
+      '=IF($F' + r + '="";"";$F' + r + '+N($G' + r + ')+N($H' + r + '))');
+
+    setFormulaVerified_(sheet.getRange(r, TRIP.perPerson),
+      '=IF(OR($I' + r + '="";N($J' + r + ')=0);"";$I' + r + '/$J' + r + ')');
+  }
+}
+
 /** First row with a destination that matches a known spot — its distance must be > 0. */
 function findProbeRow_(sheet, lastRow) {
   for (var r = FIRST_DATA_ROW; r <= lastRow; r++) {
@@ -796,22 +839,74 @@ function probeLooksRight_(sheet, probe) {
  * Prints what the Trip Log is actually doing. Run this if distances read zero.
  */
 function diagnoseTripLog() {
-  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.trips);
-  var spots = SpreadsheetApp.getActive().getSheetByName(SHEETS.spots);
-  var row = findProbeRow_(sheet, Math.max(sheet.getLastRow(), 24));
+  diagnoseTrip(0);
+}
 
-  Logger.log('Spreadsheet locale: ' + SpreadsheetApp.getActive().getSpreadsheetLocale());
-  Logger.log('Probe row: ' + row);
-  Logger.log('C (destination): "' + sheet.getRange(row, TRIP.destination).getValue() + '"');
-  Logger.log('O (trip type):   "' + sheet.getRange(row, TRIP.tripType).getValue() + '"');
-  Logger.log('E formula:       ' + sheet.getRange(row, TRIP.distance).getFormula());
-  Logger.log('E value:         "' + sheet.getRange(row, TRIP.distance).getValue() + '"');
-  Logger.log('F value:         "' + sheet.getRange(row, TRIP.fuel).getValue() + '"');
-  Logger.log('Surf Spots B3:   "' + spots.getRange('B3').getValue() + '"');
-  Logger.log('Surf Spots C3:   "' + spots.getRange('C3').getValue() + '"');
-  Logger.log('Sheet names:     ' + SpreadsheetApp.getActive().getSheets().map(function (s) {
-    return s.getName();
-  }).join(' | '));
+/**
+ * Everything both money formulas read, for one row, as formulas *and* values.
+ *
+ * A number that looks right can still be a string the sheet won't multiply, and
+ * a formula that computes can still be the wrong formula — which is exactly
+ * what columns I and K turned out to be. Pass 0 to probe the first row with a
+ * destination. Writes nothing.
+ */
+function diagnoseTrip(row) {
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(SHEETS.trips);
+  var spots = ss.getSheetByName(SHEETS.spots);
+  var settings = ss.getSheetByName(SHEETS.settings);
+  if (!row) row = findProbeRow_(sheet, Math.max(sheet.getLastRow(), 24));
+
+  function cell(label, col) {
+    var r = sheet.getRange(row, col);
+    var f = String(r.getFormula()).trim();
+    Logger.log(label + ' value: "' + r.getValue() + '"' + (f ? '   formula: ' + f : ''));
+  }
+
+  Logger.log('Spreadsheet locale: ' + ss.getSpreadsheetLocale());
+  Logger.log('Row: ' + row);
+  cell('A date       ', TRIP.date);
+  cell('C destination', TRIP.destination);
+  cell('D manual km  ', TRIP.manualKm);
+  cell('E distance   ', TRIP.distance);
+  cell('F fuel       ', TRIP.fuel);
+  cell('G tolls      ', TRIP.tolls);
+  cell('H parking    ', TRIP.parking);
+  cell('I total      ', TRIP.total);
+  cell('J people     ', TRIP.people);
+  cell('K per person ', TRIP.perPerson);
+  cell('O trip type  ', TRIP.tripType);
+  cell('R odo start  ', TRIP.odoStart);
+  cell('S odo end    ', TRIP.odoEnd);
+  cell('U taxi       ', TRIP.taxi);
+  cell('X boards     ', TRIP.boards);
+
+  ['B9', 'B10', 'B11', 'B16', 'B17', 'B18'].forEach(function (a) {
+    var r = settings.getRange(a);
+    var f = String(r.getFormula()).trim();
+    Logger.log('Settings!' + a + ' = "' + r.getValue() + '"' + (f ? '   formula: ' + f : ''));
+  });
+
+  // Which tab actually answers for this destination. Surf Spots is searched
+  // first, so a row there shadows the Places entry entirely.
+  var name = String(sheet.getRange(row, TRIP.destination).getValue()).trim();
+  if (name) {
+    Logger.log('"' + name + '" in Surf Spots: ' + lookupDistance_(spots, name, 55));
+    Logger.log('"' + name + '" in Places:     ' +
+      lookupDistance_(ss.getSheetByName(SHEETS.places), name, 200));
+  }
+
+  Logger.log('Sheet names: ' + ss.getSheets().map(function (s) { return s.getName(); }).join(' | '));
+}
+
+/** What a tab returns for a name, or "not found" — read-only. */
+function lookupDistance_(sheet, name, lastRow) {
+  if (!sheet) return 'tab missing';
+  var rows = sheet.getRange(FIRST_DATA_ROW, 2, lastRow - 2, 2).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === name) return rows[i][1] + ' km (row ' + (i + FIRST_DATA_ROW) + ')';
+  }
+  return 'not found';
 }
 
 function ensureToken_() {
@@ -869,6 +964,21 @@ function checkSheetHealth_(ss) {
 
       if (fuel <= 0) {
         problems.push('row ' + row + ': ' + distance + ' km but fuel reads €0.00');
+      }
+
+      // The other end of the same class of failure. Every check here looks for
+      // a number that came out too small; nothing was watching for one that
+      // came out absurd. Faro and back is 180 km and that is the longest drive
+      // this group makes, so 400 cannot flag a real trip.
+      if (distance > MAX_PLAUSIBLE_KM) {
+        problems.push('row ' + row + ': ' + distance + ' km — further than this car goes. ' +
+          'Check the odometer columns and the destination.');
+      }
+      // A trip costing more than the whole rental is arithmetic going wrong,
+      // not an expensive drive.
+      if (total > num_(ss.getSheetByName(SHEETS.settings).getRange('B15').getValue())) {
+        problems.push('row ' + row + ': costs €' + total.toFixed(2) +
+          ' — more than the entire rental. Check columns I and K.');
       }
       if (total <= 0) {
         problems.push('row ' + row + ': trip total reads €0.00');
@@ -947,7 +1057,8 @@ function verifyInstall() {
     'setupMembers_', 'setFormulaVerified_', 'setupTripLog_', 'applyDistanceFormulas_',
     'writeDistanceFormulas_', 'writeFuelFormulas_', 'assertNoDecimalLiterals_',
     'checkSheetHealth_', 'correctSeededPrepayment_', 'addMissingPlaces_', 'findProbeRow_', 'probeLooksRight_',
-    'ensureToken_', 'showToken', 'diagnoseTripLog', 'verifyInstall',
+    'ensureToken_', 'showToken', 'diagnoseTripLog', 'diagnoseTrip', 'lookupDistance_',
+    'writeCostFormulas_', 'verifyInstall',
   ];
 
   var missing = [];

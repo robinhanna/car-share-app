@@ -7,7 +7,9 @@ import {
   personCarCharge,
   personLedger,
   personTripCosts,
+  personTripShare,
   personTrips,
+  personTripsShown,
   personDayBreakdown,
   personRideDays,
   totalMemberDays,
@@ -27,9 +29,9 @@ const settings: Settings = {
   monthEnd: '2026-08-31',
   totalMemberDays: 75,
   dailyRate: 410 / 75,
-  fuelPrice: 2.03,
-  consumption: 6.0,
-  costPerKm: costPerKm(2.03, 6.0),
+  fuelPrice: 1.913,
+  consumption: 4.6,
+  costPerKm: costPerKm(1.913, 4.6),
   riderDays: 0,
   dayRate: 410 / 75,
 };
@@ -84,19 +86,20 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
 });
 
 describe('fuel maths', () => {
-  it('matches Settings!B11 at the corrected consumption', () => {
-    expect(costPerKm(2.03, 6.0)).toBeCloseTo(0.1218, 5);
+  it('matches Settings!B11 at the measured consumption', () => {
+    // €1.913/L from a receipt, 4.6 L/100km from half a 45 L tank over 490 km.
+    expect(costPerKm(1.913, 4.6)).toBeCloseTo(0.088, 5);
   });
 
   it('prices a Zavial round trip the way the sheet does', () => {
     const distance = tripDistanceKm({ spot: zavial, tripType: 'Round trip' });
     expect(distance).toBe(28);
-    expect(fuelCost(distance, settings)).toBeCloseTo(3.41, 2);
+    expect(fuelCost(distance, settings)).toBeCloseTo(2.46, 2);
   });
 
   // The trip that started all this: the app said EUR27.40, which was 7.5 L/100km.
   it('prices the 180km Faro run at the measured consumption', () => {
-    expect(fuelCost(180, settings)).toBeCloseTo(21.92, 2);
+    expect(fuelCost(180, settings)).toBeCloseTo(15.84, 2);
     expect(180 * costPerKm(2.03, 7.5)).toBeCloseTo(27.40, 2);
   });
 
@@ -156,9 +159,9 @@ describe('trip split', () => {
   it('divides the trip total between driver and riders', () => {
     const cost = tripCost({ distanceKm: 28, tolls: 0, parking: 3, riderCount: 2 }, settings);
     expect(cost.people).toBe(3);
-    // 28km x EUR0.1218 x 1.06 for three aboard, plus EUR3 parking.
-    expect(cost.total).toBeCloseTo(6.615, 3);
-    expect(cost.perPerson).toBeCloseTo(2.205, 3);
+    // 28km x EUR0.088 x 1.06 for three aboard, plus EUR3 parking.
+    expect(cost.total).toBeCloseTo(5.6118, 3);
+    expect(cost.perPerson).toBeCloseTo(1.8706, 3);
   });
 
   it('charges the whole trip to a driver travelling alone', () => {
@@ -288,7 +291,7 @@ describe('taxi trips', () => {
   it('divides the cost between the passengers and spares the driver', () => {
     const cost = tripCost({ distanceKm: 28, riderCount: 2, taxi: true }, settings);
     expect(cost.people).toBe(2);
-    expect(cost.perPerson).toBeCloseTo(1.81, 2);
+    expect(cost.perPerson).toBeCloseTo(1.31, 2);
   });
 
   it('charges the driver nothing on their own taxi run', () => {
@@ -475,5 +478,53 @@ describe('personDayBreakdown', () => {
     const { full, half } = personDayBreakdown('Lucia', trips);
     expect(full + half * 0.5).toBe(personRideDays('Lucia', trips));
     expect(full + half * 0.5).toBe(2.5);
+  });
+});
+
+describe('a lift in its driver’s own list', () => {
+  const lift = (over: Partial<Trip> = {}): Trip =>
+    ({
+      id: 'lift-1',
+      date: '2026-08-17T10:00:00.000Z',
+      driver: 'Jonas',
+      destination: 'Lagos',
+      activity: '',
+      tripType: 'One-way',
+      distanceKm: 20,
+      fuelCost: 2.7,
+      tolls: 0,
+      parking: 0,
+      total: 2.7,
+      people: 1,
+      perPerson: 2.7,
+      riders: ['Lucia'],
+      notes: '',
+      taxi: true,
+      boards: false,
+      origin: 'Quinta',
+      until: '',
+      ...over,
+    }) as Trip;
+
+  it('shows on the driver’s page even though it costs them nothing', () => {
+    const trips = [lift()];
+    expect(personTrips('Jonas', trips)).toHaveLength(0);
+    expect(personTripsShown('Jonas', trips)).toHaveLength(1);
+    expect(personTripShare('Jonas', trips[0])).toBe(0);
+  });
+
+  it('leaves the money exactly where it was', () => {
+    const trips = [lift()];
+    // The whole point of the split: the list grew, the ledger did not.
+    expect(personTripCosts('Jonas', trips)).toBe(0);
+    expect(personTripCosts('Lucia', trips)).toBeCloseTo(2.7, 2);
+    expect(personTripShare('Lucia', trips[0])).toBeCloseTo(2.7, 2);
+  });
+
+  it('does not list a trip twice when the driver also rode', () => {
+    // An ordinary shared trip they drove is already in personTrips.
+    const shared = [lift({ taxi: false })];
+    expect(personTripsShown('Jonas', shared)).toHaveLength(1);
+    expect(personTripShare('Jonas', shared[0])).toBeCloseTo(2.7, 2);
   });
 });

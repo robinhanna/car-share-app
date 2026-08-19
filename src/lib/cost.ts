@@ -164,6 +164,29 @@ export function personTrips(name: string, trips: Trip[]): Trip[] {
 }
 
 /**
+ * The same trips, plus the lifts they drove.
+ *
+ * personTrips leaves a taxi driver out of their own run on purpose — it feeds
+ * personTripCosts, and putting them back would charge them for a favour they
+ * did for free. But the run still happened and belongs in their history, so
+ * the list on screen uses this and prices those rows at nothing. Two jobs, two
+ * functions; the money keeps the stricter one.
+ */
+export function personTripsShown(name: string, trips: Trip[]): Trip[] {
+  const own = personTrips(name, trips);
+  const drovenAsFavour = trips.filter(
+    (t) => t.driver === name && t.taxi && t.riders.length > 0 && !own.includes(t),
+  );
+  return [...own, ...drovenAsFavour];
+}
+
+/** Nothing, when they were doing the driving on a lift. */
+export function personTripShare(name: string, trip: Trip): number {
+  if (trip.driver === name && trip.taxi && trip.riders.length > 0) return 0;
+  return trip.perPerson;
+}
+
+/**
  * What one calendar day in the car costs a rider. Mirrors dayCharge_ in
  * apps-script/Code.gs.
  *

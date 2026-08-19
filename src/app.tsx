@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { Reservation, RideRequest, Trip } from './api/types';
 import { EXPECTED_CODE_VERSION } from './config';
 import type { TripCost } from './lib/cost';
+import { shortDate } from './lib/dates';
 import { clearMe, getMe, setMe } from './state/me';
 import { describeOp } from './offline/outbox';
 import { discardWrite, retryRejected, sync, useApp } from './state/store';
@@ -82,7 +83,7 @@ export function App() {
       <div class="topbar">
         {route.name === 'home' ? (
           <span class="eyebrow" style="margin:0">
-            Soul &amp; Surf · Aug 26
+            Soul &amp; Surf · {shortDate(new Date().toISOString())}
           </span>
         ) : (
           <button class="back" onClick={back}>

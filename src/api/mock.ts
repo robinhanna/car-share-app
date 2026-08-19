@@ -31,8 +31,8 @@ import type {
  * Never used in a production build — the deploy workflow refuses to build
  * without API_URL.
  */
-const fuelPrice = 2.03;
-const consumption = 6.0;
+const fuelPrice = 1.913;
+const consumption = 4.6;
 
 let bootstrap: Bootstrap = {
   version: new Date().toISOString(),
