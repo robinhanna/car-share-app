@@ -29,9 +29,9 @@ const settings: Settings = {
   monthEnd: '2026-08-31',
   totalMemberDays: 75,
   dailyRate: 410 / 75,
-  fuelPrice: 1.913,
-  consumption: 4.6,
-  costPerKm: costPerKm(1.913, 4.6),
+  fuelPrice: 1.888,
+  consumption: 5.14,
+  costPerKm: costPerKm(1.888, 5.14),
   riderDays: 0,
   dayRate: 410 / 75,
 };
@@ -87,19 +87,19 @@ const trip = (over: Partial<Trip> = {}): Trip => ({
 
 describe('fuel maths', () => {
   it('matches Settings!B11 at the measured consumption', () => {
-    // €1.913/L from a receipt, 4.6 L/100km from half a 45 L tank over 490 km.
-    expect(costPerKm(1.913, 4.6)).toBeCloseTo(0.088, 5);
+    // €1.888/L and 5.14 L/100km, both from the same tank: 37.5 L over 730 km.
+    expect(costPerKm(1.888, 5.14)).toBeCloseTo(0.09704, 5);
   });
 
   it('prices a Zavial round trip the way the sheet does', () => {
     const distance = tripDistanceKm({ spot: zavial, tripType: 'Round trip' });
     expect(distance).toBe(28);
-    expect(fuelCost(distance, settings)).toBeCloseTo(2.46, 2);
+    expect(fuelCost(distance, settings)).toBeCloseTo(2.72, 2);
   });
 
   // The trip that started all this: the app said EUR27.40, which was 7.5 L/100km.
   it('prices the 180km Faro run at the measured consumption', () => {
-    expect(fuelCost(180, settings)).toBeCloseTo(15.84, 2);
+    expect(fuelCost(180, settings)).toBeCloseTo(17.47, 2);
     expect(180 * costPerKm(2.03, 7.5)).toBeCloseTo(27.40, 2);
   });
 
@@ -159,9 +159,9 @@ describe('trip split', () => {
   it('divides the trip total between driver and riders', () => {
     const cost = tripCost({ distanceKm: 28, tolls: 0, parking: 3, riderCount: 2 }, settings);
     expect(cost.people).toBe(3);
-    // 28km x EUR0.088 x 1.06 for three aboard, plus EUR3 parking.
-    expect(cost.total).toBeCloseTo(5.6118, 3);
-    expect(cost.perPerson).toBeCloseTo(1.8706, 3);
+    // 28km x EUR0.09704 x 1.06 for three aboard, plus EUR3 parking.
+    expect(cost.total).toBeCloseTo(5.8802, 3);
+    expect(cost.perPerson).toBeCloseTo(1.9601, 3);
   });
 
   it('charges the whole trip to a driver travelling alone', () => {
@@ -291,7 +291,7 @@ describe('taxi trips', () => {
   it('divides the cost between the passengers and spares the driver', () => {
     const cost = tripCost({ distanceKm: 28, riderCount: 2, taxi: true }, settings);
     expect(cost.people).toBe(2);
-    expect(cost.perPerson).toBeCloseTo(1.31, 2);
+    expect(cost.perPerson).toBeCloseTo(1.44, 2);
   });
 
   it('charges the driver nothing on their own taxi run', () => {

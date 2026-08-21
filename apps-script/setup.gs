@@ -289,7 +289,7 @@ function setupSettings_(ss) {
 /** Where the car actually is. Must match the timeZone in appsscript.json. */
 var TIME_ZONE = 'Europe/Lisbon';
 
-var CONFIG_VERSION = 8;
+var CONFIG_VERSION = 9;
 
 /** Faro and back is 180 km. Nothing this group drives comes near this. */
 var MAX_PLAUSIBLE_KM = 400;
@@ -353,20 +353,25 @@ function migrateConfig_(ss) {
   // cash out. Both are money he laid out for the group, so both are in the pot.
   s.getRange('B14').setValue(35);
 
-  // The refuel receipt fixes the tank size, which is what the half-tank reading
-  // needed: €69.65 at €1.913/L is 36.41 L, taken with the light on, so about
-  // 8.6 L was left of a 45 L tank — right for a 106, impossible for a 50 L one.
-  // Half of 45 L over 490 km is 4.59 L/100km.
+  // Measured tank to tank, which needs no guess about the tank's size: 37.5 L
+  // put in after 730 km driven since the previous full fill.
   //
-  // Worth knowing rather than discovering later: 4.6 is below the 106 1.4i's
-  // official combined figure of about 6. At 6.0 those 490 km would leave 15.6 L
-  // — a third of a tank, not a half — so the gauge is reading generously in its
-  // upper half and the truth is somewhere in 4.6–6.0. Robin's call. Brim to
-  // brim on two consecutive fill-ups is what would settle it.
-  s.getRange('B10').setValue(4.6);
+  //     37.5 / 730 * 100 = 5.137 L/100km
+  //
+  // This supersedes 4.6, which came off a gauge reading "half" at 490 km and
+  // was about 10% low. The two now reconcile, which is why this one is
+  // trustworthy: at 5.137 those 490 km burn 25.2 L, leaving 19.8 L of a 45 L
+  // tank — 44%, which is what "half" looks like on a gauge that flatters in
+  // its upper half. Provenance kept here because it is the part that keeps
+  // getting lost between recalibrations: 7.5 was a guess, 6.0 a quarter-tank
+  // estimate, 4.6 a gauge reading, and only this one is a measurement.
+  s.getRange('B10').setValue(5.14);
 
-  // A receipt beats the DGEG monthly average that was in here (€2.03, 31 Jul).
-  s.getRange('B9').setValue(1.913);
+  // The receipt that produced the figure above — €70.78 for 37.5 L — so the
+  // price and the consumption come from the same tank rather than being
+  // averaged across two. Weighting both refuels by litres gives €1.9003, a
+  // difference of €0.0006/km, which is not worth explaining to anyone.
+  s.getRange('B9').setValue(1.888);
 
   var members = ss.getSheetByName(SHEETS.members);
   var rows = memberRows_();
@@ -391,7 +396,7 @@ function migrateConfig_(ss) {
   correctSeededPrepayment_(ss);
 
   props.setProperty('configVersion', String(CONFIG_VERSION));
-  Logger.log('Config migrated to v' + CONFIG_VERSION + ': fuel €1.913/L at 4.6 L/100km.');
+  Logger.log('Config migrated to v' + CONFIG_VERSION + ': fuel €1.888/L at 5.14 L/100km.');
 }
 
 function correctSeededPrepayment_(ss) {
